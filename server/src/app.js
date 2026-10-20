@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import authRoutes from './routes/auth.routes.js';
+import { catalogRoutes, adminCatalogRoutes } from './routes/catalog.routes.js';
 import { databaseReady } from './db/connect.js';
 import { loadUser, requireRole } from './security/session.js';
 
@@ -31,6 +32,8 @@ export function createApp() {
   });
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   app.use('/api/auth', authRoutes);
+  app.use('/api/catalog', catalogRoutes);
+  app.use('/api/admin/catalog', adminCatalogRoutes);
   // This endpoint exercises the server-side admin guard without exposing data.
   app.get('/api/admin/check', (req, res, next) => databaseReady() ? next() : res.status(503).json({ error: 'Database unavailable.' }), loadUser, requireRole('admin'), (req, res) => res.json({ ok: true, role: 'admin' }));
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.', code: 'NOT_FOUND' }));

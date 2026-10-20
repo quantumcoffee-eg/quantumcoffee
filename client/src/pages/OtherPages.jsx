@@ -1,9 +1,9 @@
+import CatalogAdmin from '../admin/CatalogAdmin.jsx';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingBag, ShieldCheck, UserRound, ArrowLeft } from 'lucide-react';
 import { useLocale } from '../lib/i18n.jsx';
 import { useSession } from '../lib/session.jsx';
-import { api } from '../lib/api.js';
 
 function Page({ label, title, children }) {
   const { t, url } = useLocale();
@@ -58,10 +58,5 @@ export function AuthPage({ signup = false }) {
 }
 export function CartPage() { const { t } = useLocale(); return <Page label="CART" title={t('cartTitle')}><ShoppingBag size={36}/><p>{t('cartEmpty')}</p></Page>; }
 export function LegalPage() { const { t } = useLocale(); return <Page label="INFORMATION" title={t('legalTitle')}><ShieldCheck size={36}/><p>{t('legalBody')}</p></Page>; }
-export function AdminPage() {
-  const { t } = useLocale(); const { user } = useSession();
-  const [verified, setVerified] = useState(null); const [error, setError] = useState('');
-  const check = async () => { setError(''); try { await api('/admin/check'); setVerified(true); } catch (e) { setVerified(false); setError(e.message); } };
-  return <Page label="SECURE ADMIN" title={t('adminTitle')}><ShieldCheck size={36}/><p>{user?.email}</p><p>{t('adminPending')}</p><div className="account-actions"><button className="button button-dark" onClick={check} type="button">{t('retry')} admin permission check</button>{verified === true && <p role="status">Backend admin access verified.</p>}{error && <p role="alert" className="auth-error">{error}</p>}<SignOutButton/></div></Page>;
-}
+export function AdminPage() { return <CatalogAdmin />; }
 export function NotFound() { const { t } = useLocale(); return <Page label="404" title={t('notFound')}><p>{t('comingSoon')}</p></Page>; }

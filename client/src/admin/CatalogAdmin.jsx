@@ -1,0 +1,117 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { api } from '../lib/api.js';
+import { useLocale } from '../lib/i18n.jsx';
+import { useSession } from '../lib/session.jsx';
+import './catalog-admin.css';
+
+const blankCategory = () => ({ name:{en:'',ar:''}, slug:'', description:{en:'',ar:''},sortOrder:0,active:false });
+const blankProduct = () => ({ name:{en:'',ar:''}, slug:'', description:{en:'',ar:''},categoryId:'',price:'',compareAt:'',stockQuantity:0,featured:false,status:'draft' });
+const slugify = value => value.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,96);
+const displayMoney = value => typeof value === 'number' ? new Intl.NumberFormat('en-EG',{style:'currency',currency:'EGP'}).format(value/100) : '—';
+const fromPiastres = value => value == null ? '' : (value/100).toFixed(2);
+const toPiastres = (value, required) => {
+  if (!value && !required) return null;
+  if (!/^(0|[1-9]\d{0,6})(?:\.\d{1,2})?$/.test(value)) throw new Error('Enter a valid price in EGP with up to two decimal places.');
+  const [p,k=''] = value.split('.');
+  const n=Number(p)*100+Number(k.padEnd(2,'0'));
+  if (!Number.isSafeInteger(n)||n<=0) throw new Error('Selling and compare-at prices must be positive.');
+  return n;
+};
+const bilingualField = (value, onChange, prop, label, long = false) => <div className="qc-admin-two" key={prop}>
+  {['en','ar'].map(lang=><label key={lang}>{label} ({lang.toUpperCase()}){long ? <textarea rows={3} dir={lang==='ar'?'rtl':'ltr'} value={value[prop]?.[lang]||''} onChange={e=>onChange({...value,[prop]:{...value[prop],[lang]:e.target.value}})}/> : <input dir={lang==='ar'?'rtl':'ltr'} value={value[prop]?.[lang]||''} onChange={e=>onChange({...value,[prop]:{...value[prop],[lang]:e.target.value}})}/>}</label>)}
+</div>;
+
+export default function CatalogAdmin() {
+  const { lang, url } = useLocale();
+  const session = useSession();
+  const [query,setQuery]=useSearchParams();
+  const tab = ['orders','products','categories'].includes(query.get('tab')) ? query.get('tab') : 'orders';
+  const ar = lang === 'ar';
+  const [categories,setCategories]=useState([]),[products,setProducts]=useState([]),[pagination,setPagination]=useState({page:1,pages:0,total:0});
+  const [catDraft,setCatDraft]=useState(null),[prodDraft,setProdDraft]=useState(null);
+  const [notice,setNotice]=useState(''),[error,setError]=useState(''),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false);
+  const [page,setPage]=useState(1);
+  const load = useCallback(async () => {
+    setLoading(true);setError('');
+    try {
+      const [cats, prods]=await Promise.all([api('/admin/catalog/categories'),api(`/admin/catalog/products?page=${page}`)]);
+      setCategories(cats.categories);setProducts(prods.items);setPagination(prods.pagination);
+    } catch(e){setError(e.message)} finally {setLoading(false)}
+  },[page]);
+  useEffect(()=>{void load()},[load]);
+  const showTab = next => {setQuery({tab:next});setError('');setNotice('');setCatDraft(null);setProdDraft(null)};
+  async function submitCategory(e){
+    e.preventDefault();setError('');setNotice('');setBusy(true);
+    try {
+      const body={name:catDraft.name,slug:catDraft.slug,description:catDraft.description,sortOrder:Number(catDraft.sortOrder),active:catDraft.active};
+      const editing=Boolean(catDraft._id);
+      await api(editing?`/admin/catalog/categories/${catDraft._id}`:'/admin/catalog/categories',{method:editing?'PATCH':'POST',body:editing?{...body,revision:catDraft.revision}:body});
+      setCatDraft(null);setNotice(ar?'تم حفظ الفئة.':'Category saved.');await load();
+    } catch(err){setError(err.message)}finally{setBusy(false)}
+  }
+  async function submitProduct(e){
+    e.preventDefault();setError('');setNotice('');setBusy(true);
+    try {
+      const pricePiastres=toPiastres(prodDraft.price,true);
+      const compareAtPiastres=toPiastres(prodDraft.compareAt,false);
+      const body={name:prodDraft.name,slug:prodDraft.slug,description:prodDraft.description,categoryId:prodDraft.categoryId,pricePiastres,compareAtPiastres,stockQuantity:Number(prodDraft.stockQuantity),featured:prodDraft.featured,status:prodDraft.status};
+      const editing=Boolean(prodDraft._id);
+      await api(editing?`/admin/catalog/products/${prodDraft._id}`:'/admin/catalog/products',{method:editing?'PATCH':'POST',body:editing?{...body,revision:prodDraft.revision}:body});
+      setProdDraft(null);setNotice(ar?'تم حفظ المنتج كمسودة.':'Product draft saved.');await load();
+    }catch(err){setError(err.message)}finally{setBusy(false)}
+  }
+  async function archiveProduct(product){
+    if (!window.confirm(ar?'أرشفة هذا المنتج؟':'Archive this product?')) return;
+    setBusy(true);setError('');
+    try{await api(`/admin/catalog/products/${product._id}`,{method:'DELETE'});setNotice(ar?'تمت الأرشفة.':'Product archived.');await load()}
+    catch(err){setError(err.message)}finally{setBusy(false)}
+  }
+  async function deleteCategory(category){
+    if (!window.confirm(ar?'حذف هذه الفئة؟':'Delete this category?')) return;
+    setBusy(true);setError('');
+    try{await api(`/admin/catalog/categories/${category._id}`,{method:'DELETE'});setNotice(ar?'تم الحذف.':'Category deleted.');await load()}
+    catch(err){setError(err.message)}finally{setBusy(false)}
+  }
+  const editProduct = p => setProdDraft({...p,categoryId:String(p.categoryId),price:fromPiastres(p.pricePiastres),compareAt:fromPiastres(p.compareAtPiastres)});
+  const switchTab = t => <button key={t} type="button" className={tab===t?'selected':''} onClick={()=>showTab(t)}>{ar?({orders:'الطلبات',products:'المنتجات',categories:'الفئات'}[t]):t[0].toUpperCase()+t.slice(1)}</button>;
+  return <main className="qc-admin">
+    <div className="qc-admin-head"><div><p className="kicker">QUANTUM COFFEE / ADMIN</p><h1>{ar?'لوحة الإدارة':'Store Administration'}</h1><p>{session.user?.email}</p></div><button className="qc-admin-secondary" type="button" onClick={async()=>{try{await session.logout();window.location.assign(url('/login'))}catch(e){setError(e.message)}}}>{ar?'خروج':'Sign out'}</button></div>
+    <nav className="qc-admin-tabs" aria-label="Admin sections">{['orders','products','categories'].map(switchTab)}</nav>
+    {error&&<p role="alert" className="qc-admin-error">{error} <button type="button" onClick={load}>{ar?'تحديث':'Reload'}</button></p>}
+    {notice&&<p role="status" className="qc-admin-notice">{notice}</p>}
+    {loading&&<p role="status">{ar?'جار التحميل…':'Loading catalog…'}</p>}
+    {tab==='orders'&&<section className="qc-admin-panel"><h2>{ar?'الطلبات':'Orders'}</h2><p>{ar?'ستكون إدارة الطلبات متاحة بعد تنفيذ الدفع والطلبات.':'Orders management will become available after the checkout and payment implementation.'}</p><p>{ar?'الطلبات غير مفعلة حالياً.':'Ordering is currently disabled.'}</p></section>}
+    {tab==='categories'&&<section className="qc-admin-panel">
+      <div className="qc-admin-row"><h2>{ar?'الفئات':'Categories'}</h2><button className="qc-admin-primary" type="button" onClick={()=>setCatDraft(blankCategory())}>{ar?'إضافة فئة':'Add category'}</button></div>
+      {catDraft&&<form onSubmit={submitCategory} className="qc-admin-form">
+        <h3>{catDraft._id?'Edit category':'New category'}</h3>
+        {bilingualField(catDraft,setCatDraft,'name','Name')}
+        <label>URL slug<input required readOnly={Boolean(catDraft._id)} value={catDraft.slug} onChange={e=>setCatDraft({...catDraft,slug:slugify(e.target.value)})}/></label>
+        {bilingualField(catDraft,setCatDraft,'description','Description',true)}
+        <label>Sort position<input type="number" min="0" max="100000" required value={catDraft.sortOrder} onChange={e=>setCatDraft({...catDraft,sortOrder:e.target.value})}/></label>
+        <label className="qc-admin-checkbox"><input type="checkbox" checked={catDraft.active} onChange={e=>setCatDraft({...catDraft,active:e.target.checked})}/>Visible category</label>
+        <div className="qc-admin-row"><button disabled={busy} className="qc-admin-primary">Save category</button><button type="button" onClick={()=>setCatDraft(null)} className="qc-admin-secondary">Cancel</button></div>
+      </form>}
+      <div className="qc-admin-list">{categories.map(c=><div className="qc-admin-list-item" key={c._id}><div><b>{c.name[lang]||c.name.en}</b><p>/{c.slug} · {c.active?'Visible':'Hidden'}</p></div><div><button type="button" onClick={()=>setCatDraft({...c})}>Edit</button><button disabled={busy} type="button" onClick={()=>deleteCategory(c)}>Delete</button></div></div>)}{!categories.length&&!loading&&<p>{ar?'لا توجد فئات.':'No categories yet.'}</p>}</div>
+    </section>}
+    {tab==='products'&&<section className="qc-admin-panel">
+      <div className="qc-admin-row"><h2>{ar?'المنتجات':'Products'}</h2><button type="button" className="qc-admin-primary" disabled={!categories.length} onClick={()=>setProdDraft({...blankProduct(),categoryId:categories[0]?._id||''})}>Add product</button></div>
+      <p className="qc-admin-tip">Product publication remains disabled until verified R2 image uploads are implemented. All new products are drafts.</p>
+      {prodDraft&&<form onSubmit={submitProduct} className="qc-admin-form"><h3>{prodDraft._id?'Edit product':'New product draft'}</h3>
+        {bilingualField(prodDraft,setProdDraft,'name','Name')}
+        <label>URL slug<input required readOnly={Boolean(prodDraft._id)} value={prodDraft.slug} onChange={e=>setProdDraft({...prodDraft,slug:slugify(e.target.value)})}/></label>
+        {bilingualField(prodDraft,setProdDraft,'description','Description',true)}
+        <label>Category<select value={prodDraft.categoryId} onChange={e=>setProdDraft({...prodDraft,categoryId:e.target.value})}>{categories.map(c=><option key={c._id} value={c._id}>{c.name[lang]||c.name.en}</option>)}</select></label>
+        <div className="qc-admin-two"><label>Price (EGP)<input type="text" inputMode="decimal" required value={prodDraft.price} onChange={e=>setProdDraft({...prodDraft,price:e.target.value})}/></label><label>Compare-at price (EGP)<input type="text" inputMode="decimal" value={prodDraft.compareAt} onChange={e=>setProdDraft({...prodDraft,compareAt:e.target.value})}/></label></div>
+        <label>Stock quantity<input type="number" min="0" max="1000000" required value={prodDraft.stockQuantity} onChange={e=>setProdDraft({...prodDraft,stockQuantity:e.target.value})}/></label>
+        <label className="qc-admin-checkbox"><input type="checkbox" checked={prodDraft.featured} onChange={e=>setProdDraft({...prodDraft,featured:e.target.checked})}/>Best seller / featured selection</label>
+        <p>Status: <b>{prodDraft.status}</b> · Images will be added with R2 integration</p>
+        <div className="qc-admin-row"><button className="qc-admin-primary" disabled={busy}>Save draft</button><button type="button" className="qc-admin-secondary" onClick={()=>setProdDraft(null)}>Cancel</button></div>
+      </form>}
+      <div className="qc-admin-list">{products.map(p=><div className="qc-admin-list-item" key={p._id}><div><b>{p.name[lang]||p.name.en}</b><p>{displayMoney(p.pricePiastres)} {p.compareAtPiastres!=null&&<s>{displayMoney(p.compareAtPiastres)}</s>} · {p.status} · stock {p.stockQuantity}</p></div><div><button type="button" onClick={()=>editProduct(p)}>Edit</button><button type="button" disabled={busy||p.status==='archived'} onClick={()=>archiveProduct(p)}>Archive</button></div></div>)}{!products.length&&!loading&&<p>{ar?'لا توجد منتجات.':'No products yet.'}</p>}</div>
+      {pagination.pages>1&&<div className="qc-admin-row"><button type="button" disabled={page<=1} onClick={()=>setPage(p=>p-1)}>Previous</button><span>{page}/{pagination.pages}</span><button type="button" disabled={page>=pagination.pages} onClick={()=>setPage(p=>p+1)}>Next</button></div>}
+    </section>}
+    <p className="qc-admin-return"><Link to={url('/')}>{ar?'العودة للموقع':'Return to storefront'}</Link></p>
+  </main>;
+}
