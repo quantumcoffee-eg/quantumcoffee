@@ -1,0 +1,28 @@
+# QUANTUM COFFEE ONLY. A blueprint is inert until explicitly imported into a
+# dedicated Render workspace. DO NOT import it into the Tap & Wrap workspace.
+services:
+  - type: web
+    name: quantum-coffee-api
+    runtime: node
+    plan: starter
+    rootDir: server
+    branch: main
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/ready
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_DB_NAME
+        value: quantumcoffee_production
+      - key: REGISTRATION_ENABLED
+        value: 'false'
+      - key: ALLOW_ADMIN_BOOTSTRAP
+        value: 'false'
+      - key: MONGODB_URI
+        sync: false
+      - key: PUBLIC_SITE_ORIGIN
+        sync: false
+      - key: CLIENT_ORIGIN
+        sync: false
