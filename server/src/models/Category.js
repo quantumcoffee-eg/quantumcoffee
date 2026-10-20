@@ -6,6 +6,7 @@ const categorySchema = new mongoose.Schema({
   description: { en: { type: String, default: '' }, ar: { type: String, default: '' } },
   sortOrder: { type: Number, min: 0, default: 0 },
   active: { type: Boolean, default: false },
+  imageKey: { type: String, default: null },
   revision: { type: Number, default: 0 },
 }, { timestamps: true, strict: 'throw' });
 categorySchema.index({ slug: 1 }, { unique: true });

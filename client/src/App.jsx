@@ -5,6 +5,7 @@ import Header from './components/Header.jsx';
 import Footer from './components/Footer.jsx';
 import HomePage from './pages/HomePage.jsx';
 import ShopPage from './pages/ShopPage.jsx';
+import ProductPage from './pages/ProductPage.jsx';
 import { AboutPage, TrackPage, OrdersPage, AccountPage, AuthPage, CartPage, LegalPage, AdminPage, NotFound } from './pages/OtherPages.jsx';
 
 function Guard({ role, children }) {
@@ -20,6 +21,7 @@ function Layout() {
   return <><Header/><Routes>
     <Route index element={<HomePage/>}/>
     <Route path="shop" element={<ShopPage/>}/>
+    <Route path="products/:slug" element={<ProductPage/>}/>
     <Route path="about" element={<AboutPage/>}/>
     <Route path="track-order" element={<TrackPage/>}/>
     <Route path="my-orders" element={<Guard role="customer"><OrdersPage/></Guard>}/>

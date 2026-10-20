@@ -4,6 +4,7 @@ import { api } from '../lib/api.js';
 import { useLocale } from '../lib/i18n.jsx';
 import { useSession } from '../lib/session.jsx';
 import './catalog-admin.css';
+import MediaEditor from './MediaEditor.jsx';
 
 const blankCategory = () => ({ name:{en:'',ar:''}, slug:'', description:{en:'',ar:''},sortOrder:0,active:false });
 const blankProduct = () => ({ name:{en:'',ar:''}, slug:'', description:{en:'',ar:''},categoryId:'',price:'',compareAt:'',stockQuantity:0,featured:false,status:'draft' });
@@ -91,13 +92,14 @@ export default function CatalogAdmin() {
         {bilingualField(catDraft,setCatDraft,'description','Description',true)}
         <label>Sort position<input type="number" min="0" max="100000" required value={catDraft.sortOrder} onChange={e=>setCatDraft({...catDraft,sortOrder:e.target.value})}/></label>
         <label className="qc-admin-checkbox"><input type="checkbox" checked={catDraft.active} onChange={e=>setCatDraft({...catDraft,active:e.target.checked})}/>Visible category</label>
+        {catDraft._id&&<MediaEditor key={catDraft._id} kind="category" record={catDraft} onChange={setCatDraft} onRefresh={load}/>}
         <div className="qc-admin-row"><button disabled={busy} className="qc-admin-primary">Save category</button><button type="button" onClick={()=>setCatDraft(null)} className="qc-admin-secondary">Cancel</button></div>
       </form>}
       <div className="qc-admin-list">{categories.map(c=><div className="qc-admin-list-item" key={c._id}><div><b>{c.name[lang]||c.name.en}</b><p>/{c.slug} · {c.active?'Visible':'Hidden'}</p></div><div><button type="button" onClick={()=>setCatDraft({...c})}>Edit</button><button disabled={busy} type="button" onClick={()=>deleteCategory(c)}>Delete</button></div></div>)}{!categories.length&&!loading&&<p>{ar?'لا توجد فئات.':'No categories yet.'}</p>}</div>
     </section>}
     {tab==='products'&&<section className="qc-admin-panel">
       <div className="qc-admin-row"><h2>{ar?'المنتجات':'Products'}</h2><button type="button" className="qc-admin-primary" disabled={!categories.length} onClick={()=>setProdDraft({...blankProduct(),categoryId:categories[0]?._id||''})}>Add product</button></div>
-      <p className="qc-admin-tip">Product publication remains disabled until verified R2 image uploads are implemented. All new products are drafts.</p>
+      <p className="qc-admin-tip">New products begin as drafts. Publish after verified R2 images are attached; checkout remains disabled.</p>
       {prodDraft&&<form onSubmit={submitProduct} className="qc-admin-form"><h3>{prodDraft._id?'Edit product':'New product draft'}</h3>
         {bilingualField(prodDraft,setProdDraft,'name','Name')}
         <label>URL slug<input required readOnly={Boolean(prodDraft._id)} value={prodDraft.slug} onChange={e=>setProdDraft({...prodDraft,slug:slugify(e.target.value)})}/></label>
@@ -106,8 +108,10 @@ export default function CatalogAdmin() {
         <div className="qc-admin-two"><label>Price (EGP)<input type="text" inputMode="decimal" required value={prodDraft.price} onChange={e=>setProdDraft({...prodDraft,price:e.target.value})}/></label><label>Compare-at price (EGP)<input type="text" inputMode="decimal" value={prodDraft.compareAt} onChange={e=>setProdDraft({...prodDraft,compareAt:e.target.value})}/></label></div>
         <label>Stock quantity<input type="number" min="0" max="1000000" required value={prodDraft.stockQuantity} onChange={e=>setProdDraft({...prodDraft,stockQuantity:e.target.value})}/></label>
         <label className="qc-admin-checkbox"><input type="checkbox" checked={prodDraft.featured} onChange={e=>setProdDraft({...prodDraft,featured:e.target.checked})}/>Best seller / featured selection</label>
-        <p>Status: <b>{prodDraft.status}</b> · Images will be added with R2 integration</p>
-        <div className="qc-admin-row"><button className="qc-admin-primary" disabled={busy}>Save draft</button><button type="button" className="qc-admin-secondary" onClick={()=>setProdDraft(null)}>Cancel</button></div>
+        <label>Publication status<select value={prodDraft.status} onChange={e=>setProdDraft({...prodDraft,status:e.target.value})}><option value="draft">Draft</option><option value="published" disabled={!prodDraft._id||!prodDraft.imageKeys?.length}>Published</option><option value="archived">Archived</option></select></label>
+        <p className="qc-admin-tip">Publish only after you have verified at least one R2 image and activated the category. Checkout stays disabled.</p>
+        {prodDraft._id&&<MediaEditor key={prodDraft._id} kind="product" record={prodDraft} onChange={updated=>setProdDraft(d=>({...d,...updated,price:d.price,compareAt:d.compareAt}))} onRefresh={load}/>}
+        <div className="qc-admin-row"><button className="qc-admin-primary" disabled={busy}>Save product</button><button type="button" className="qc-admin-secondary" onClick={()=>setProdDraft(null)}>Cancel</button></div>
       </form>}
       <div className="qc-admin-list">{products.map(p=><div className="qc-admin-list-item" key={p._id}><div><b>{p.name[lang]||p.name.en}</b><p>{displayMoney(p.pricePiastres)} {p.compareAtPiastres!=null&&<s>{displayMoney(p.compareAtPiastres)}</s>} · {p.status} · stock {p.stockQuantity}</p></div><div><button type="button" onClick={()=>editProduct(p)}>Edit</button><button type="button" disabled={busy||p.status==='archived'} onClick={()=>archiveProduct(p)}>Archive</button></div></div>)}{!products.length&&!loading&&<p>{ar?'لا توجد منتجات.':'No products yet.'}</p>}</div>
       {pagination.pages>1&&<div className="qc-admin-row"><button type="button" disabled={page<=1} onClick={()=>setPage(p=>p-1)}>Previous</button><span>{page}/{pagination.pages}</span><button type="button" disabled={page>=pagination.pages} onClick={()=>setPage(p=>p+1)}>Next</button></div>}
