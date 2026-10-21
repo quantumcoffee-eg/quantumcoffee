@@ -11,7 +11,7 @@ async function main() {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || passwordError(password)) throw new Error('Provide valid ADMIN_BOOTSTRAP_EMAIL and a strong password (12–128 characters).');
   if (!(await connectDatabase())) throw new Error('MONGODB_URI missing');
   if (await User.exists({ email })) throw new Error('Account already exists. Refusing to upgrade or overwrite it.');
-  const admin = await User.create({ name: 'Quantum Coffee Admin', email, passwordHash: await hashPassword(password), role: 'admin' });
+  const admin = await User.create({ name: 'Quantum Coffee Admin', email, passwordHash: await hashPassword(password), role: 'admin', emailVerifiedAt: new Date() });
   console.log(`Created admin: ${admin.email}. Remove bootstrap secrets and disable ALLOW_ADMIN_BOOTSTRAP now.`);
 }
 main().catch(e => { console.error(e.message); process.exitCode = 1; }).finally(async () => { await mongoose.disconnect(); });

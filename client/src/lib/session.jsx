@@ -32,7 +32,8 @@ export function SessionProvider({ children }) {
   }, []);
   const register = useCallback(async (payload) => {
     const result = await api('/auth/register', { method: 'POST', body: payload });
-    setUser(result.user); setError(''); setStatus('ready'); return result.user;
+    // Registration returns a pending verification result, NOT a login session.
+    return result;
   }, []);
   const logout = useCallback(async () => {
     await api('/auth/logout', { method: 'POST' });

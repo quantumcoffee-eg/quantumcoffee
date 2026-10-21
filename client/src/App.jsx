@@ -6,7 +6,7 @@ import Footer from './components/Footer.jsx';
 import HomePage from './pages/HomePage.jsx';
 import ShopPage from './pages/ShopPage.jsx';
 import ProductPage from './pages/ProductPage.jsx';
-import { AboutPage, AccountPage, AuthPage, LegalPage, AdminPage, NotFound } from './pages/OtherPages.jsx';
+import { AboutPage, AccountPage, AuthPage, LegalPage, AdminPage, NotFound, VerifyEmailPage, ResetPasswordPage, EmailRequestPage } from './pages/OtherPages.jsx';
 import { CartProvider } from './commerce/CartProvider.jsx';
 import { CartPage, CheckoutPage, OrdersPage, TrackPage } from './commerce/CartPages.jsx';
 
@@ -30,6 +30,10 @@ function Layout() {
     <Route path="account" element={<Guard role="customer"><AccountPage/></Guard>}/>
     <Route path="login" element={<AuthPage/>}/>
     <Route path="signup" element={<AuthPage signup/>}/>
+    <Route path="verify-email" element={<VerifyEmailPage/>}/>
+    <Route path="reset-password" element={<ResetPasswordPage/>}/>
+    <Route path="forgot-password" element={<EmailRequestPage/>}/>
+    <Route path="resend-verification" element={<EmailRequestPage verification/>}/>
     <Route path="cart" element={<CartPage/>}/>
     <Route path="checkout" element={<CheckoutPage/>}/>
     <Route path="shipping-policy" element={<LegalPage/>}/>

@@ -32,3 +32,9 @@ test('rejects cross-site origins or accidentally enabled admin bootstrap', () =>
 test('does not constrain local development', () => {
   assert.deepEqual(productionConfigIssues({ NODE_ENV: 'development' }), []);
 });
+
+test('opening registration requires a configured SMTP sender', () => {
+  const issues = productionConfigIssues({ ...valid, REGISTRATION_ENABLED: 'true' });
+  assert.ok(issues.some(issue => issue.includes('SMTP')));
+  assert.deepEqual(productionConfigIssues({ ...valid, REGISTRATION_ENABLED: 'true', SMTP_HOST: 'smtp.example.com', SMTP_USER: 'smtp-user', SMTP_PASSWORD: 'smtp-secret', MAIL_FROM: 'hello@example.com' }), []);
+});

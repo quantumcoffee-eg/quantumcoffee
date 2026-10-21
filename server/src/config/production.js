@@ -34,8 +34,9 @@ export function productionConfigIssues(env = process.env) {
   if (env.CHECKOUT_ENABLED === 'true') {
     issues.push('CHECKOUT_ENABLED must stay false until payment-proof verification and launch checks are complete.');
   }
-  if (env.REGISTRATION_ENABLED === 'true') {
-    issues.push('REGISTRATION_ENABLED must stay false until email verification/recovery are implemented.');
+  if (env.REGISTRATION_ENABLED === 'true' &&
+      !(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASSWORD && env.MAIL_FROM)) {
+    issues.push('REGISTRATION_ENABLED requires configured verified-domain SMTP credentials.');
   }
   if (env.ALLOW_ADMIN_BOOTSTRAP === 'true') {
     issues.push('ALLOW_ADMIN_BOOTSTRAP must never be enabled on the Render service.');
