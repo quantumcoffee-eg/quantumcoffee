@@ -1,4 +1,5 @@
 import {Router} from 'express';
+import {queueOrderMailSafely} from '../notifications/order-mail.js';
 import mongoose from 'mongoose';
 import Order from '../models/Order.js';
 import PaymentProof from '../models/PaymentProof.js';
@@ -82,6 +83,7 @@ paymentRoutes.post('/:id/confirm',rateLimit({limit:12,windowMs:15*60*1000}),stor
     if(!claimed)throw new CommerceError('The proof was already processed.','PROOF_CONFLICT',409);
     result=updated;
   });
+  await queueOrderMailSafely('proof_submitted',result.toObject());
   res.json({order:receiptState(result)});
 }));
 paymentRoutes.use(errorHandler);
@@ -109,6 +111,7 @@ adminPaymentRoutes.patch('/:id/review',run(async(req,res)=>{
       {$set:{paymentState:'paid'},$inc:{revision:1},$push:{paymentHistory:{state:'paid',at:new Date(),by:req.authUser._id}}},
       {new:true,runValidators:true});
     if(!updated)throw new CommerceError('Order changed. Reload.','EDIT_CONFLICT',409);
+    await queueOrderMailSafely('payment',updated.toObject());
     return res.json({paymentState:updated.paymentState,revision:updated.revision});
   }
   if(order.paymentState!=='awaiting_verification'||!order.paymentProofId)
@@ -128,6 +131,7 @@ adminPaymentRoutes.patch('/:id/review',run(async(req,res)=>{
     if(!verified)throw new CommerceError('Proof changed. Reload.','PAYMENT_CONFLICT',409);
     result=updated;
   });
+  await queueOrderMailSafely('payment',result.toObject());
   res.json({paymentState:result.paymentState,revision:result.revision});
 }));
 adminPaymentRoutes.use(errorHandler);

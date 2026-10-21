@@ -7,6 +7,7 @@ import { imageUrl } from '../media/config.js';
 import { databaseReady } from '../db/connect.js';
 import { loadUser, requireRole } from '../security/session.js';
 import { rateLimit } from '../security/rate-limit.js';
+import { queueOrderMailSafely } from '../notifications/order-mail.js';
 import { CommerceError, validateItems, validateCheckout, validateCustomer, shippingAmount, lineTotals, fingerprint, newOrderNumber, statusTransition, phoneNumber, ORDERING_IMPLEMENTED } from '../commerce/checkout.js';
 
 export const commerceRoutes = Router();
@@ -60,6 +61,7 @@ commerceRoutes.post('/checkout',rateLimit({limit:10,windowMs:60*60*1000}),run(as
   const existing=await Order.findOne({checkoutKey:data.checkoutKey}).lean();
   if(existing){
     if(existing.requestFingerprint!==requestFingerprint)throw new CommerceError('Checkout reference was already used.', 'CHECKOUT_CONFLICT', 409);
+    await queueOrderMailSafely('placed',existing);
     return res.json({order:orderSummary(existing),recovered:true});
   }
   const shippingPiastres=shippingAmount(data.customer.governorate);
@@ -83,9 +85,10 @@ commerceRoutes.post('/checkout',rateLimit({limit:10,windowMs:60*60*1000}),run(as
       saved=order.toObject();
     });
   }catch(error){
-    if(error?.code===11000){const prior=await Order.findOne({checkoutKey:data.checkoutKey}).lean();if(prior&&prior.requestFingerprint===requestFingerprint)return res.json({order:orderSummary(prior),recovered:true});}
+    if(error?.code===11000){const prior=await Order.findOne({checkoutKey:data.checkoutKey}).lean();if(prior&&prior.requestFingerprint===requestFingerprint){await queueOrderMailSafely('placed',prior);return res.json({order:orderSummary(prior),recovered:true});}}
     throw error;
   }
+  await queueOrderMailSafely('placed',saved);
   res.status(201).json({order:orderSummary(saved)});
 }));
 commerceRoutes.post('/track',rateLimit({limit:8,windowMs:15*60*1000}),run(async(req,res)=>{
@@ -142,6 +145,7 @@ adminOrdersRoutes.patch('/:id/status',run(async(req,res)=>{
     updated=await Order.findOneAndUpdate({_id:order._id,revision:order.revision},{$set:{fulfillmentState:next},$inc:{revision:1},$push:{history:{status:next,at:now,by:req.authUser._id}}},{new:true,runValidators:true});
     if(!updated)throw new CommerceError('Order changed. Reload first.','EDIT_CONFLICT',409);
   }
+  await queueOrderMailSafely('fulfillment',updated.toObject());
   res.json({order:adminSummary(updated.toObject())});
 }));
 adminOrdersRoutes.use(fail);

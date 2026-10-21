@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { createApp } from './app.js';
 import { connectDatabase } from './db/connect.js';
 import { assertProductionConfig } from './config/production.js';
+import { startOrderMailWorker } from './notifications/order-mail.js';
 
 async function start() {
   try {
@@ -15,6 +16,7 @@ async function start() {
       throw new Error('Production database connection is required.');
     }
     createApp().listen(port, '0.0.0.0', () => console.log(`Quantum Coffee API listening on ${port}`));
+    if (connected) startOrderMailWorker();
   } catch (error) {
     console.error(`Quantum Coffee startup failed: ${error.message}`);
     process.exitCode = 1;

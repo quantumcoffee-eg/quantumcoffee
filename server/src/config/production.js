@@ -1,3 +1,5 @@
+import { orderEmailIssues } from '../notifications/order-mail-values.js';
+
 // Production safety checks. This project must never silently attach to an
 // existing client's database or accept cross-site auth on an unapproved origin.
 const EXPECTED_DATABASE = 'quantumcoffee_production';
@@ -38,6 +40,7 @@ export function productionConfigIssues(env = process.env) {
       !(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASSWORD && env.MAIL_FROM)) {
     issues.push('REGISTRATION_ENABLED requires configured verified-domain SMTP credentials.');
   }
+  issues.push(...orderEmailIssues(env));
   if (env.ALLOW_ADMIN_BOOTSTRAP === 'true') {
     issues.push('ALLOW_ADMIN_BOOTSTRAP must never be enabled on the Render service.');
   }
