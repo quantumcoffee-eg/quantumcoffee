@@ -6,7 +6,9 @@ import Footer from './components/Footer.jsx';
 import HomePage from './pages/HomePage.jsx';
 import ShopPage from './pages/ShopPage.jsx';
 import ProductPage from './pages/ProductPage.jsx';
-import { AboutPage, TrackPage, OrdersPage, AccountPage, AuthPage, CartPage, LegalPage, AdminPage, NotFound } from './pages/OtherPages.jsx';
+import { AboutPage, AccountPage, AuthPage, LegalPage, AdminPage, NotFound } from './pages/OtherPages.jsx';
+import { CartProvider } from './commerce/CartProvider.jsx';
+import { CartPage, CheckoutPage, OrdersPage, TrackPage } from './commerce/CartPages.jsx';
 
 function Guard({ role, children }) {
   const { url, t } = useLocale();
@@ -29,6 +31,7 @@ function Layout() {
     <Route path="login" element={<AuthPage/>}/>
     <Route path="signup" element={<AuthPage signup/>}/>
     <Route path="cart" element={<CartPage/>}/>
+    <Route path="checkout" element={<CheckoutPage/>}/>
     <Route path="shipping-policy" element={<LegalPage/>}/>
     <Route path="refund-policy" element={<LegalPage/>}/>
     <Route path="privacy-policy" element={<LegalPage/>}/>
@@ -38,8 +41,8 @@ function Layout() {
   </Routes><Footer/></>;
 }
 export default function App() {
-  return <SessionProvider><LocaleProvider><Routes>
+  return <SessionProvider><CartProvider><LocaleProvider><Routes>
     <Route path="/*" element={<Layout/>}/>
     <Route path="/ar/*" element={<Layout/>}/>
-  </Routes></LocaleProvider></SessionProvider>;
+  </Routes></LocaleProvider></CartProvider></SessionProvider>;
 }

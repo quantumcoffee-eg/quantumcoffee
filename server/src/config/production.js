@@ -31,6 +31,9 @@ export function productionConfigIssues(env = process.env) {
   if (env.PUBLIC_SITE_ORIGIN && !origins.includes(env.PUBLIC_SITE_ORIGIN)) {
     issues.push('CLIENT_ORIGIN must include PUBLIC_SITE_ORIGIN exactly.');
   }
+  if (env.CHECKOUT_ENABLED === 'true') {
+    issues.push('CHECKOUT_ENABLED must stay false until payment-proof verification and launch checks are complete.');
+  }
   if (env.REGISTRATION_ENABLED === 'true') {
     issues.push('REGISTRATION_ENABLED must stay false until email verification/recovery are implemented.');
   }

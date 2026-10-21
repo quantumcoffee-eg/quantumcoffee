@@ -1,7 +1,7 @@
 import CatalogAdmin from '../admin/CatalogAdmin.jsx';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ShoppingBag, ShieldCheck, UserRound, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, UserRound, ArrowLeft } from 'lucide-react';
 import { useLocale } from '../lib/i18n.jsx';
 import { useSession } from '../lib/session.jsx';
 
@@ -23,8 +23,6 @@ function SignOutButton() {
   }}>{t('signOutAction')}</button>{error && <p role="alert" className="auth-error">{error}</p>}</div>;
 }
 export function AboutPage() { const { t } = useLocale(); return <Page label="STORY" title={t('aboutTitle')}><p>{t('aboutBody')}</p></Page>; }
-export function TrackPage() { const { t } = useLocale(); return <Page label="ORDER STATUS" title={t('trackTitle')}><p>{t('trackingPending')}</p><div className="form-shell"><label>{t('orderNumber')}<input disabled placeholder="QC-000001" /></label><label>{t('phone')}<input disabled placeholder="01xxxxxxxxx" /></label><button className="button button-dark" disabled>{t('trackAction')}</button></div></Page>; }
-export function OrdersPage() { const { t } = useLocale(); return <Page label="ACCOUNT" title={t('orders')}><p>{t('accountPending')}</p></Page>; }
 export function AccountPage() {
   const { t } = useLocale(); const { user } = useSession();
   return <Page label="ACCOUNT" title={t('account')}><UserRound size={35}/><div className="account-detail"><h2>{t('accountDetails')}</h2><p>{user?.name}</p><p>{user?.email}</p></div><SignOutButton/></Page>;
@@ -56,7 +54,6 @@ export function AuthPage({ signup = false }) {
     </form>
   </Page>;
 }
-export function CartPage() { const { t } = useLocale(); return <Page label="CART" title={t('cartTitle')}><ShoppingBag size={36}/><p>{t('cartEmpty')}</p></Page>; }
 export function LegalPage() { const { t } = useLocale(); return <Page label="INFORMATION" title={t('legalTitle')}><ShieldCheck size={36}/><p>{t('legalBody')}</p></Page>; }
 export function AdminPage() { return <CatalogAdmin />; }
 export function NotFound() { const { t } = useLocale(); return <Page label="404" title={t('notFound')}><p>{t('comingSoon')}</p></Page>; }

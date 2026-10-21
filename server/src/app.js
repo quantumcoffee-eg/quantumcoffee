@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import authRoutes from './routes/auth.routes.js';
 import { catalogRoutes, adminCatalogRoutes } from './routes/catalog.routes.js';
 import mediaRoutes from './routes/media.routes.js';
+import { commerceRoutes, adminOrdersRoutes } from './routes/commerce.routes.js';
+import { paymentRoutes, adminPaymentRoutes } from './routes/payment.routes.js';
 import { databaseReady } from './db/connect.js';
 import { loadUser, requireRole } from './security/session.js';
 
@@ -36,6 +38,10 @@ export function createApp() {
   app.use('/api/catalog', catalogRoutes);
   app.use('/api/admin/catalog', adminCatalogRoutes);
   app.use('/api/admin/media', mediaRoutes);
+  app.use('/api/commerce', commerceRoutes);
+  app.use('/api/commerce/payment-proofs', paymentRoutes);
+  app.use('/api/admin/orders', adminOrdersRoutes);
+  app.use('/api/admin/payments', adminPaymentRoutes);
   // This endpoint exercises the server-side admin guard without exposing data.
   app.get('/api/admin/check', (req, res, next) => databaseReady() ? next() : res.status(503).json({ error: 'Database unavailable.' }), loadUser, requireRole('admin'), (req, res) => res.json({ ok: true, role: 'admin' }));
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.', code: 'NOT_FOUND' }));

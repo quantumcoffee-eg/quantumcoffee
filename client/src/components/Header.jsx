@@ -3,9 +3,10 @@ import { NavLink, Link, useLocation } from 'react-router-dom';
 import { Menu, X, UserRound, ShoppingBag, Globe, ArrowUpRight } from 'lucide-react';
 import { useLocale } from '../lib/i18n.jsx';
 import { useSession } from '../lib/session.jsx';
+import { useCart } from '../commerce/CartProvider.jsx';
 
 export default function Header(){
- const {t,url,lang,otherUrl}=useLocale();const {role}=useSession();const [open,setOpen]=useState(false);const location=useLocation();
+ const {t,url,lang,otherUrl}=useLocale();const {role}=useSession();const {count}=useCart();const [open,setOpen]=useState(false);const location=useLocation();
  useEffect(()=>setOpen(false),[location.pathname]);
  useEffect(()=>{document.body.style.overflow=open?'hidden':'';return()=>{document.body.style.overflow='';};},[open]);
  const links=[{to:'/',label:t('home')},{to:'/shop',label:t('shop')},{to:'/about',label:t('about')},{to:role==='customer'?'/my-orders':'/track-order',label:role==='customer'?t('orders'):t('track')}];
@@ -19,7 +20,7 @@ export default function Header(){
     <nav className="desktop-links" aria-label="Main navigation">{links.map(item=><NavLink key={item.to} to={url(item.to)} end={item.to==='/'}>{item.label}</NavLink>)}</nav>
     <div className="header-actions">
      <Link className="icon-button" title={role==='admin'?t('admin'):role==='customer'?t('account'):t('login')} aria-label={role==='admin'?t('admin'):role==='customer'?t('account'):t('login')} to={url(accountDestination)}><UserRound size={20} strokeWidth={1.7}/></Link>
-     <Link className="icon-button" to={url('/cart')} aria-label={t('cart')} title={t('cart')}><ShoppingBag size={20} strokeWidth={1.7}/></Link>
+     <Link className="icon-button" to={url('/cart')} aria-label={t('cart')} title={t('cart')}><ShoppingBag size={20} strokeWidth={1.7}/>{count>0&&<span className="qc-cart-count" aria-hidden="true">{count>99?'99+':count}</span>}</Link>
      <Link className="lang-header" to={otherUrl()} aria-label={lang==='en'?'Switch to Arabic':'Switch to English'}><span>{lang==='en'?'AR':'EN'}</span></Link>
     </div>
    </div>

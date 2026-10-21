@@ -5,6 +5,7 @@ import { useLocale } from '../lib/i18n.jsx';
 import { useSession } from '../lib/session.jsx';
 import './catalog-admin.css';
 import MediaEditor from './MediaEditor.jsx';
+import AdminOrders from './AdminOrders.jsx';
 
 const blankCategory = () => ({ name:{en:'',ar:''}, slug:'', description:{en:'',ar:''},sortOrder:0,active:false });
 const blankProduct = () => ({ name:{en:'',ar:''}, slug:'', description:{en:'',ar:''},categoryId:'',price:'',compareAt:'',stockQuantity:0,featured:false,status:'draft' });
@@ -40,7 +41,7 @@ export default function CatalogAdmin() {
       setCategories(cats.categories);setProducts(prods.items);setPagination(prods.pagination);
     } catch(e){setError(e.message)} finally {setLoading(false)}
   },[page]);
-  useEffect(()=>{void load()},[load]);
+  useEffect(()=>{if(tab!=='orders')void load()},[load,tab]);
   const showTab = next => {setQuery({tab:next});setError('');setNotice('');setCatDraft(null);setProdDraft(null)};
   async function submitCategory(e){
     e.preventDefault();setError('');setNotice('');setBusy(true);
@@ -82,7 +83,7 @@ export default function CatalogAdmin() {
     {error&&<p role="alert" className="qc-admin-error">{error} <button type="button" onClick={load}>{ar?'تحديث':'Reload'}</button></p>}
     {notice&&<p role="status" className="qc-admin-notice">{notice}</p>}
     {loading&&<p role="status">{ar?'جار التحميل…':'Loading catalog…'}</p>}
-    {tab==='orders'&&<section className="qc-admin-panel"><h2>{ar?'الطلبات':'Orders'}</h2><p>{ar?'ستكون إدارة الطلبات متاحة بعد تنفيذ الدفع والطلبات.':'Orders management will become available after the checkout and payment implementation.'}</p><p>{ar?'الطلبات غير مفعلة حالياً.':'Ordering is currently disabled.'}</p></section>}
+    {tab==='orders'&&<AdminOrders/>}
     {tab==='categories'&&<section className="qc-admin-panel">
       <div className="qc-admin-row"><h2>{ar?'الفئات':'Categories'}</h2><button className="qc-admin-primary" type="button" onClick={()=>setCatDraft(blankCategory())}>{ar?'إضافة فئة':'Add category'}</button></div>
       {catDraft&&<form onSubmit={submitCategory} className="qc-admin-form">
