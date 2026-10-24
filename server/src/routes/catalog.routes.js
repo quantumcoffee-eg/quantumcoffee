@@ -2,6 +2,7 @@ import { Router } from 'express';
 import Category from '../models/Category.js';
 import Product from '../models/Product.js';
 import { CatalogInputError, validateCategory, validateProduct } from '../catalog/validation.js';
+import { currentSizes } from '../catalog/grinds.js';
 import { databaseReady } from '../db/connect.js';
 import MediaAsset from '../models/MediaAsset.js';
 import { imageUrl, checkVerifiedKeys } from '../media/config.js';
@@ -25,8 +26,8 @@ const pageParams = (query) => {
 const response = (items, total, page) => ({ items, pagination: { page, limit: 20, total, pages: Math.ceil(total/20) } });
 const revision = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const publicCategory = c => ({ ...c, imageUrl: imageUrl(c.imageKey) });
-const adminProduct = p => ({...p,imageUrls:(p.imageKeys||[]).map(imageUrl).filter(Boolean)});
-const publicProduct = p => { const {imageKeys, ...safe}=p; const imageUrls=(imageKeys||[]).map(imageUrl).filter(Boolean); return {...safe,imageUrl:imageUrls[0]||null,imageUrls}; };
+const adminProduct = p => ({...p,sizes:currentSizes(p),imageUrls:(p.imageKeys||[]).map(imageUrl).filter(Boolean)});
+const publicProduct = p => { const {imageKeys, ...safe}=p; const imageUrls=(imageKeys||[]).map(imageUrl).filter(Boolean); return {...safe,sizes:currentSizes(p),imageUrl:imageUrls[0]||null,imageUrls}; };
 const needsBody = (req) => req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : null;
 
 catalogRoutes.use(dbGuard);
@@ -138,8 +139,13 @@ adminCatalogRoutes.patch('/products/:id', asyncRoute(async (req,res,next)=> {
       await checkVerifiedKeys(original.imageKeys,MediaAsset);
       if (!(await Category.exists({_id:values.categoryId,active:true}))) return res.status(400).json({error:'Activate this category before publishing.',code:'CATEGORY_HIDDEN'});
     }
+    // Keep older size/grind identities if they have already been ordered, so cancellation can restore stock.
+    const Order = (await import('../models/Order.js')).default;
+    const used = await Order.find({'lines.productId': original._id}).select('lines').lean();
+    const expected = new Set(used.flatMap(order=>order.lines.filter(line=>String(line.productId)===String(original._id)).map(line=>`${line.packGrams}:${line.grindCode}`)));
+    for(const identity of expected){const [grams,grind]=identity.split(':');if(!values.sizes.some(s=>s.grams===Number(grams)&&s.grindOptions.some(g=>g.code===grind)))return res.status(409).json({error:'Cannot remove a size/preparation referenced by an existing order.',code:'VARIANT_IN_USE'});}
     if (!(await Category.exists({_id:values.categoryId}))) return res.status(400).json({error:'Category not found.',code:'INVALID_CATEGORY'});
-    const updated=await Product.findOneAndUpdate({_id:original._id,revision:body.revision},{$set:{name:values.name,description:values.description,categoryId:values.categoryId,pricePiastres:values.pricePiastres,compareAtPiastres:values.compareAtPiastres,stockQuantity:values.stockQuantity,featured:values.featured,status:values.status},$inc:{revision:1}},{new:true,runValidators:true});
+    const updated=await Product.findOneAndUpdate({_id:original._id,revision:body.revision},{$set:{name:values.name,description:values.description,categoryId:values.categoryId,pricePiastres:values.pricePiastres,compareAtPiastres:values.compareAtPiastres,stockQuantity:values.stockQuantity,sizes:values.sizes,featured:values.featured,status:values.status},$unset:{packGrams:"",grindOptions:""},$inc:{revision:1}},{new:true,runValidators:true});
     if (!updated) return res.status(409).json({error:'Product was updated elsewhere. Reload.',code:'EDIT_CONFLICT'});
     res.json({product:updated});
   } catch(error) { dbError(error,next,res); }

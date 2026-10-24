@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-export const MAX_PRODUCT_IMAGES = 12;
+export const MAX_PRODUCT_IMAGES = 24;
 const TYPES = Object.freeze({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' });
 export const ALLOWED_IMAGE_TYPES = Object.keys(TYPES);
 

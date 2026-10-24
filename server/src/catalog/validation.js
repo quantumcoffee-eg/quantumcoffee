@@ -1,4 +1,5 @@
 // Catalog inputs are fully replaced on edit; unknown fields are rejected.
+import { PREPARATION_CODES, MAX_SIZES, MAX_STOCK, summaryFromSizes } from './grinds.js';
 export class CatalogInputError extends Error {
   constructor(message) { super(message); this.status = 400; this.code = 'INVALID_CATALOG_INPUT'; }
 }
@@ -44,11 +45,32 @@ export function validateCategory(value) {
 }
 export function validateProduct(value, { allowPublish = false } = {}) {
   const data = object(value, 'Product');
-  only(data, ['name','slug','description','categoryId','pricePiastres','compareAtPiastres','stockQuantity','featured','status'], 'product');
+  only(data, ['name','slug','description','categoryId','sizes','featured','status'], 'product');
+  if (!Array.isArray(data.sizes) || data.sizes.length < 1 || data.sizes.length > MAX_SIZES)
+    fail('Add between 1 and 12 product sizes.');
+  const gramsSeen = new Set();
+  const sizes = data.sizes.map(size => {
+    object(size,'Size');
+    only(size,['grams','pricePiastres','compareAtPiastres','grindOptions'],'size');
+    const grams = integer(size.grams,'size in grams',{min:1,max:50000});
+    if (gramsSeen.has(grams)) fail('Duplicate size is not allowed.');
+    gramsSeen.add(grams);
+    const pricePiastres = integer(size.pricePiastres,'size selling price',{min:1});
+    const compareAtPiastres = integer(size.compareAtPiastres,'size compare-at price',{min:1,nullable:true});
+    if(compareAtPiastres !== null && compareAtPiastres <= pricePiastres) fail('Compare-at price must exceed the selling price.');
+    if (!Array.isArray(size.grindOptions) || size.grindOptions.length > PREPARATION_CODES.length)
+      fail('Select valid coffee preparations for each size.');
+    const codes=new Set();
+    const grindOptions=size.grindOptions.map(option=>{
+      object(option,'Preparation');only(option,['code','stockQuantity'],'preparation');
+      if (!PREPARATION_CODES.includes(option.code) || codes.has(option.code)) fail('Invalid or duplicate preparation.');
+      codes.add(option.code);
+      return {code:option.code,stockQuantity:integer(option.stockQuantity,'preparation stock',{max:MAX_STOCK})};
+    });
+    if (data.status==='published' && !grindOptions.length) fail('Published sizes need a preparation option.');
+    return {grams,pricePiastres,compareAtPiastres,grindOptions};
+  });
   if (typeof data.categoryId !== 'string' || !/^[a-f\d]{24}$/i.test(data.categoryId)) fail('Select a valid category.');
-  const pricePiastres = integer(data.pricePiastres, 'selling price', { min: 1 });
-  const compareAtPiastres = integer(data.compareAtPiastres, 'compare-at price', { min: 1, nullable: true });
-  if (compareAtPiastres !== null && compareAtPiastres <= pricePiastres) fail('Compare-at price must exceed the selling price.');
   if (typeof data.featured !== 'boolean') fail('Featured must be boolean.');
   if (!['draft', 'published', 'archived'].includes(data.status)) fail('Invalid product status.');
   if (data.status === 'published' && !allowPublish) fail('Publication is disabled until verified R2 product images are supported. Save as draft.');
@@ -57,9 +79,8 @@ export function validateProduct(value, { allowPublish = false } = {}) {
     slug: slug(data.slug),
     description: bilingual(data.description || {en:'', ar:''}, 'Product description', 5000, false),
     categoryId: data.categoryId,
-    pricePiastres,
-    compareAtPiastres,
-    stockQuantity: integer(data.stockQuantity, 'stock quantity', {max:1000000}),
+    sizes,
+    ...summaryFromSizes(sizes),
     featured: data.featured,
     status: data.status,
   };

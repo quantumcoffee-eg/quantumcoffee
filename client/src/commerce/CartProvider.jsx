@@ -1,28 +1,34 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { PREPARATIONS } from '../lib/grinds.js';
 
 const CartContext=createContext(null);
-const KEY='quantum-coffee-cart-v1';
+// Do not guess preparation for old product-only cart entries.
+// No guessing the size of entries from the older one-size cart.
+const KEY='quantum-coffee-cart-v3';
 const maxItems=20;
+const validCodes=new Set(PREPARATIONS.map(g=>g.code));
+const keyOf=(productId,sizeGrams,grindCode)=>`${productId.toLowerCase()}:${sizeGrams}:${grindCode}`;
 function validated(contents){
   if(!Array.isArray(contents))return [];
   const seen=new Set();
   return contents.filter(item=>{
-    if(!item||typeof item.productId!=='string'||!/^[a-f0-9]{24}$/i.test(item.productId)||!Number.isInteger(item.quantity)||item.quantity<1||item.quantity>20||seen.has(item.productId.toLowerCase()))return false;
-    seen.add(item.productId.toLowerCase());return true;
-  }).slice(0,maxItems).map(item=>({productId:item.productId.toLowerCase(),quantity:item.quantity}));
+    if(!item||typeof item.productId!=='string'||!/^[a-f0-9]{24}$/i.test(item.productId)||
+      !Number.isSafeInteger(item.sizeGrams)||item.sizeGrams<1||item.sizeGrams>50000||!validCodes.has(item.grindCode)||!Number.isInteger(item.quantity)||item.quantity<1||item.quantity>20||seen.has(keyOf(item.productId,item.sizeGrams,item.grindCode)))return false;
+    seen.add(keyOf(item.productId,item.sizeGrams,item.grindCode));return true;
+  }).slice(0,maxItems).map(item=>({productId:item.productId.toLowerCase(),sizeGrams:item.sizeGrams,grindCode:item.grindCode,quantity:item.quantity}));
 }
 function initialCart(){try{return validated(JSON.parse(localStorage.getItem(KEY)||'[]'))}catch{return []}}
 export function CartProvider({children}){
   const [items,setItems]=useState(initialCart);
-  const save=useCallback(next=>{setItems(old=>{const result=validated(typeof next==='function'?next(old):next);try{localStorage.setItem(KEY,JSON.stringify(result))}catch{/* Browser storage unavailable. Keep current tab usable. */}return result})},[]);
-  const add=useCallback((productId,quantity=1)=>{
-    if(typeof productId!=='string'||!/^[a-f0-9]{24}$/i.test(productId)||!Number.isInteger(quantity)||quantity<1||quantity>20)return false;
-    const existing=items.find(p=>p.productId===productId.toLowerCase());
-    if ((!existing&&items.length>=maxItems)||(existing&&existing.quantity>=20))return false;
-    save(old=>{const previous=old.find(p=>p.productId===productId.toLowerCase());if(previous)return old.map(p=>p.productId===previous.productId?{...p,quantity:Math.min(20,p.quantity+quantity)}:p);return old.length>=maxItems?old:[...old,{productId:productId.toLowerCase(),quantity}]});return true;
+  const save=useCallback(next=>{setItems(old=>{const result=validated(typeof next==='function'?next(old):next);try{localStorage.setItem(KEY,JSON.stringify(result))}catch{/* Keep current tab usable. */}return result})},[]);
+  const add=useCallback((productId,sizeGrams,grindCode,quantity=1)=>{
+    if(typeof productId!=='string'||!/^[a-f0-9]{24}$/i.test(productId)||!Number.isSafeInteger(sizeGrams)||sizeGrams<1||sizeGrams>50000||!validCodes.has(grindCode)||!Number.isInteger(quantity)||quantity<1||quantity>20)return false;
+    const id=keyOf(productId,sizeGrams,grindCode),existing=items.find(p=>keyOf(p.productId,p.sizeGrams,p.grindCode)===id);
+    if ((!existing&&items.length>=maxItems)||(existing&&existing.quantity+quantity>20))return false;
+    save(old=>{const previous=old.find(p=>keyOf(p.productId,p.sizeGrams,p.grindCode)===id);if(previous)return old.map(p=>keyOf(p.productId,p.sizeGrams,p.grindCode)===id?{...p,quantity:p.quantity+quantity}:p);return old.length>=maxItems?old:[...old,{productId:productId.toLowerCase(),sizeGrams,grindCode,quantity}]});return true;
   },[save,items]);
-  const update=useCallback((id,quantity)=>save(old=>old.map(p=>p.productId===id?{...p,quantity}:p)),[save]);
-  const remove=useCallback(id=>save(old=>old.filter(p=>p.productId!==id)),[save]);
+  const update=useCallback((productId,sizeGrams,grindCode,quantity)=>save(old=>old.map(p=>keyOf(p.productId,p.sizeGrams,p.grindCode)===keyOf(productId,sizeGrams,grindCode)?{...p,quantity}:p)),[save]);
+  const remove=useCallback((productId,sizeGrams,grindCode)=>save(old=>old.filter(p=>keyOf(p.productId,p.sizeGrams,p.grindCode)!==keyOf(productId,sizeGrams,grindCode))),[save]);
   const clear=useCallback(()=>save([]),[save]);
   const count=items.reduce((total,item)=>total+item.quantity,0);
   const value=useMemo(()=>({items,count,add,update,remove,clear}),[items,count,add,update,remove,clear]);

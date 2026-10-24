@@ -13,7 +13,8 @@ export function ProductCard({product}) {
     </div>
     <div className="qc-product-copy">
       <div><h3>{translated(product.name,lang)}</h3><span className="qc-product-arrow"><ArrowUpRight size={18}/></span></div>
-      <div className="qc-product-prices"><strong>{money(product.pricePiastres)}</strong>{product.compareAtPiastres>product.pricePiastres&&<s>{money(product.compareAtPiastres)}</s>}</div>
+      <span className="qc-product-view">{product.sizes?.length===1?`${product.sizes[0].grams} g`:(lang==='ar'?'أحجام متعددة':'Multiple sizes')} · {lang==='ar'?'تحميص متوسط':'Medium roast'}</span>
+      <div className="qc-product-prices"><strong>{product.sizes?.length>1?(lang==='ar'?'يبدأ من ':'From '):''}{money(product.pricePiastres)}</strong>{product.compareAtPiastres>product.pricePiastres&&<s>{money(product.compareAtPiastres)}</s>}</div>
       <span className="qc-product-view">{lang==='ar'?'عرض التفاصيل':'Discover coffee'} →</span>
     </div>
   </Link>;

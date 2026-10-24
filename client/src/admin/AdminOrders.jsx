@@ -32,7 +32,7 @@ export default function AdminOrders(){
     {open&&<section className="qc-admin-form" aria-label="Order details"><div className="qc-admin-row"><h3>{open.orderNumber}</h3><button type="button" className="qc-admin-secondary" onClick={()=>setOpen(null)}>Close</button></div>
       <p>{open.customer.name} · {open.customer.phone} · {open.customer.email||'No email'}</p>
       <p>{open.customer.governorate} · {open.customer.city} · {open.customer.street} {open.customer.details}</p>
-      {open.lines.map((line,i)=><p key={i}>{translated(line.name,lang)} × {line.quantity} — {money(line.lineTotalPiastres)}</p>)}
+      {open.lines.map((line,i)=><p key={i}>{translated(line.name,lang)} ({line.packGrams} g · {line.grindCode}) × {line.quantity} — {money(line.lineTotalPiastres)}</p>)}
       <p>{ar?'المجموع':'Subtotal'}: {money(open.subtotalPiastres)} · {ar?'الشحن':'Delivery'}: {money(open.shippingPiastres)} · <strong>{money(open.totalPiastres)}</strong></p>
       <p>{ar?'الدفع':'Payment'}: {open.paymentMethod} · {open.paymentState}</p>
       {open.paymentProofId&&<div className="qc-admin-proof"><button className="qc-admin-secondary" type="button" disabled={busy} onClick={openProof}>{ar?'تحميل إثبات الدفع':'Load private payment proof'}</button>

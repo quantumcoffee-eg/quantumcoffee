@@ -5,6 +5,7 @@ import { useLocale } from '../lib/i18n.jsx';
 import { useSession } from '../lib/session.jsx';
 import { api } from '../lib/api.js';
 import { money, translated } from '../components/CatalogCards.jsx';
+import { preparationName } from '../lib/grinds.js';
 import './commerce.css';
 import PaymentProofUploader from './PaymentProofUploader.jsx';
 
@@ -19,7 +20,7 @@ function OrderCard({order,lang,onPaymentSubmitted}){
   return <article className="qc-order-card"><div className="qc-commerce-row"><div><h2>{order.orderNumber}</h2><p>{new Date(order.createdAt).toLocaleDateString(lang==='ar'?'ar-EG':'en-EG')}</p></div><strong>{order.totalPiastres==null?'':money(order.totalPiastres)}</strong></div>
   <p>{lang==='ar'?'الحالة':'Status'}: {stateName[order.fulfillmentState]||order.fulfillmentState} · {methodName[order.paymentMethod]||order.paymentMethod} · {order.paymentState}</p>
   {order.paymentState==='rejected'&&order.paymentRejectionReason&&<p className="qc-commerce-error">{order.paymentRejectionReason}</p>}
-  {order.lines?.map((line,i)=><div key={i} className="qc-order-line"><span>{translated(line.name,lang)} × {line.quantity}</span><span>{money(line.lineTotalPiastres)}</span></div>)}
+  {order.lines?.map((line,i)=><div key={i} className="qc-order-line"><span>{translated(line.name,lang)} ({line.packGrams} g · {preparationName(line.grindCode,lang)}) × {line.quantity}</span><span>{money(line.lineTotalPiastres)}</span></div>)}
   {order.paymentMethod!=='cod'&&['awaiting_transfer','rejected'].includes(order.paymentState)&&<PaymentProofUploader orderNumber={order.orderNumber} onSubmitted={onPaymentSubmitted}/>}
   </article>;
 }
@@ -34,11 +35,11 @@ export function CartPage(){
     {!count?<div className="qc-commerce-empty"><p>{text(ar,'Your cart is empty.','سلتك فارغة.')}</p><Link to={url('/shop')} className="button button-dark">{text(ar,'Explore Coffee','تسوق الآن')}</Link></div>:<>
       <p className="qc-commerce-muted">{text(ar,'Your selections are saved on this device. Prices and stock are checked against the store before checkout.','منتجاتك محفوظة على هذا الجهاز وسيتم التحقق من السعر والمخزون قبل الطلب.')}</p>
       <ErrorLine error={error}/>{pending&&<p role="status">{text(ar,'Checking cart…','جار مراجعة السلة…')}</p>}
-      <div className="qc-cart-items">{lines.map(line=><article className="qc-cart-line" key={line.productId}>
-        <div className="qc-cart-thumb">{line.imageUrl&&<img src={line.imageUrl} alt="" loading="lazy"/>}</div><div><h2>{translated(line.name,lang)}</h2><p>{line.available?money(line.pricePiastres):text(ar,'Not available','غير متوفر')}</p>
-        <div className="qc-quantity"><button aria-label="Decrease quantity" disabled={line.quantity<=1} onClick={()=>update(line.productId,line.quantity-1)} type="button">−</button><span>{line.quantity}</span><button aria-label="Increase quantity" disabled={line.quantity>=Math.min(20,line.stockQuantity)} onClick={()=>update(line.productId,line.quantity+1)} type="button">+</button></div>
+      <div className="qc-cart-items">{lines.map(line=><article className="qc-cart-line" key={`${line.productId}:${line.sizeGrams}:${line.grindCode}`}>
+        <div className="qc-cart-thumb">{line.imageUrl&&<img src={line.imageUrl} alt="" loading="lazy"/>}</div><div><h2>{translated(line.name,lang)}</h2><p>{line.sizeGrams} g · {preparationName(line.grindCode,lang)}</p><p>{line.available?money(line.pricePiastres):text(ar,'Not available','غير متوفر')}</p>
+        <div className="qc-quantity"><button aria-label="Decrease quantity" disabled={line.quantity<=1} onClick={()=>update(line.productId,line.sizeGrams,line.grindCode,line.quantity-1)} type="button">−</button><span>{line.quantity}</span><button aria-label="Increase quantity" disabled={line.quantity>=Math.min(20,line.stockQuantity)} onClick={()=>update(line.productId,line.sizeGrams,line.grindCode,line.quantity+1)} type="button">+</button></div>
         {!line.available||line.stockQuantity<line.quantity?<p className="qc-commerce-error">{text(ar,'Unavailable or insufficient stock','الكمية غير متاحة')}</p>:null}
-        <button className="qc-text-control" onClick={()=>remove(line.productId)} type="button">{text(ar,'Remove','حذف')}</button></div><strong>{line.available?money(line.pricePiastres*line.quantity):'—'}</strong>
+        <button className="qc-text-control" onClick={()=>remove(line.productId,line.sizeGrams,line.grindCode)} type="button">{text(ar,'Remove','حذف')}</button></div><strong>{line.available?money(line.pricePiastres*line.quantity):'—'}</strong>
       </article>)}</div>
       <div className="qc-cart-summary"><strong>{text(ar,'Subtotal','الإجمالي قبل الشحن')}: {money(lines.filter(x=>x.available).reduce((n,x)=>n+x.pricePiastres*x.quantity,0))}</strong><p>{text(ar,'Shipping is calculated at checkout.','الشحن يُحسب عند إتمام الطلب.')}</p>
       {available&&!pending?<Link className="button button-dark" to={url('/checkout')}>{text(ar,'Continue to Checkout','المتابعة لإتمام الطلب')}</Link>:<button type="button" className="button button-dark" disabled>{text(ar,'Review cart to continue','راجع السلة للمتابعة')}</button>}</div>
@@ -79,7 +80,7 @@ export function CheckoutPage(){
         <h2>{text(ar,'Payment Method','طريقة الدفع')}</h2><div className="qc-payments qc-full">{methods.map(method=><label key={method}><input type="radio" name="payment" checked={paymentMethod===method} onChange={()=>setPaymentMethod(method)}/>{methodName[method]}</label>)}</div>
         {paymentMethod!=='cod'&&<p className="qc-commerce-muted qc-full">{text(ar,'Transfer instructions and secure payment-proof uploads are not active yet. Do not transfer before receiving an official order reference and verified instructions.','تعليمات التحويل ورفع إثبات الدفع غير مفعلة حتى الآن. لا تحول قبل تأكيد التعليمات الرسمية.')}</p>}
       </section>
-      <aside className="qc-checkout-summary"><h2>{text(ar,'Order Summary','ملخص الطلب')}</h2>{quote?.items.map(line=><div className="qc-order-line" key={line.productId}><span>{translated(line.name,lang)} × {line.quantity}</span><strong>{money(line.lineTotalPiastres)}</strong></div>)}
+      <aside className="qc-checkout-summary"><h2>{text(ar,'Order Summary','ملخص الطلب')}</h2>{quote?.items.map(line=><div className="qc-order-line" key={`${line.productId}:${line.packGrams}:${line.grindCode}`}><span>{translated(line.name,lang)} ({line.packGrams} g · {preparationName(line.grindCode,lang)}) × {line.quantity}</span><strong>{money(line.lineTotalPiastres)}</strong></div>)}
       {quote&&<><div className="qc-order-line"><span>{text(ar,'Subtotal','المجموع')}</span><strong>{money(quote.subtotalPiastres)}</strong></div><div className="qc-order-line"><span>{text(ar,'Delivery','الشحن')}</span><strong>{money(quote.shippingPiastres)}</strong></div><div className="qc-order-line"><strong>{text(ar,'Total','الإجمالي')}</strong><strong>{money(quote.totalPiastres)}</strong></div></>}
       {!config?.checkoutEnabled&&<p className="qc-commerce-muted">{text(ar,'Ordering will open after payment and shipping details are confirmed.','الطلبات ستفتح بعد تأكيد الشحن ووسائل الدفع.')}</p>}
       <ErrorLine error={error}/><button disabled={busy||!config?.checkoutEnabled||!quote} className="button button-dark">{busy?text(ar,'Placing order…','جار إرسال الطلب…'):text(ar,'Place Order','تأكيد الطلب')}</button>

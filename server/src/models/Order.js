@@ -5,6 +5,8 @@ const lineSchema = new mongoose.Schema({
   slug: { type: String, required: true },
   name: { en: { type: String, required: true }, ar: { type: String, default: '' } },
   imageKey: { type: String, default: null },
+  grindCode: { type: String, required: true, immutable: true },
+  packGrams: { type: Number, required: true, min: 1, max: 50000, immutable: true },
   quantity: { type: Number, required: true, min: 1, max: 20 },
   unitPricePiastres: { type: Number, required: true, min: 1 },
   lineTotalPiastres: { type: Number, required: true, min: 1 },

@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { PREPARATION_CODES } from '../catalog/grinds.js';
 
 export class CommerceError extends Error {
   constructor(message, code = 'INVALID_CHECKOUT', status = 400) {
@@ -20,11 +21,11 @@ export function validateItems(items) {
   if (!Array.isArray(items) || items.length < 1 || items.length > 20) throw new CommerceError('Choose between 1 and 20 different products.');
   const ids = new Set();
   return items.map(item => {
-    if (!item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(k => !['productId','quantity'].includes(k)) ||
-       !validId(item.productId) || !Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > 20 || ids.has(item.productId.toLowerCase()))
+    if (!item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(k => !['productId','sizeGrams','grindCode','quantity'].includes(k)) ||
+       !validId(item.productId) || !Number.isSafeInteger(item.sizeGrams) || item.sizeGrams < 1 || item.sizeGrams > 50000 || !PREPARATION_CODES.includes(item.grindCode) || !Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > 20 || ids.has(`${item.productId.toLowerCase()}:${item.sizeGrams}:${item.grindCode}`))
       throw new CommerceError('The cart contains an invalid item.', 'INVALID_CART');
-    ids.add(item.productId.toLowerCase());
-    return { productId: item.productId.toLowerCase(), quantity: item.quantity };
+    ids.add(`${item.productId.toLowerCase()}:${item.sizeGrams}:${item.grindCode}`);
+    return { productId: item.productId.toLowerCase(), sizeGrams:item.sizeGrams,grindCode:item.grindCode, quantity: item.quantity };
   });
 }
 export function phoneNumber(value) {
@@ -52,17 +53,20 @@ export function shippingAmount(governorate, env = process.env) {
 export function lineTotals(entries) {
   if (!Array.isArray(entries) || entries.length < 1) throw new CommerceError('Cart is empty.', 'EMPTY_CART');
   let subtotalPiastres = 0;
-  const lines = entries.map(({ product, quantity }) => {
+  const lines = entries.map(({ product, quantity, sizeGrams, grindCode }) => {
     if (!product || product.status !== 'published' || !Number.isSafeInteger(product.pricePiastres) || product.pricePiastres < 1)
       throw new CommerceError('A selected product is no longer available.', 'PRODUCT_UNAVAILABLE', 409);
-    if (!Number.isSafeInteger(product.stockQuantity) || product.stockQuantity < quantity)
+    const size = product.sizes?.find(s=>s.grams===sizeGrams);
+    const variant = size?.grindOptions?.find(o=>o.code===grindCode);
+    if (!variant || !Number.isSafeInteger(variant.stockQuantity) || variant.stockQuantity < quantity)
       throw new CommerceError('Not enough stock for a selected product.', 'OUT_OF_STOCK', 409);
-    const lineTotalPiastres = product.pricePiastres * quantity;
+    if (!size || !Number.isSafeInteger(size.pricePiastres) || size.pricePiastres<1) throw new CommerceError('Size unavailable.', 'PRODUCT_UNAVAILABLE',409);
+    const lineTotalPiastres = size.pricePiastres * quantity;
     if (!Number.isSafeInteger(lineTotalPiastres) || lineTotalPiastres > 1_000_000_000) throw new CommerceError('Cart total is too large.');
     subtotalPiastres += lineTotalPiastres;
     if (!Number.isSafeInteger(subtotalPiastres) || subtotalPiastres > 1_000_000_000) throw new CommerceError('Cart total is too large.');
     return { productId: product._id, slug: product.slug, name: product.name, imageKey: product.imageKeys?.[0] || null,
-      quantity, unitPricePiastres: product.pricePiastres, lineTotalPiastres };
+      grindCode, packGrams:size.grams, quantity, unitPricePiastres: size.pricePiastres, lineTotalPiastres };
   });
   return { lines, subtotalPiastres };
 }

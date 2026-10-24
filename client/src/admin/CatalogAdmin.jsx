@@ -6,9 +6,11 @@ import { useSession } from '../lib/session.jsx';
 import './catalog-admin.css';
 import MediaEditor from './MediaEditor.jsx';
 import AdminOrders from './AdminOrders.jsx';
+import { PREPARATIONS } from '../lib/grinds.js';
 
 const blankCategory = () => ({ name:{en:'',ar:''}, slug:'', description:{en:'',ar:''},sortOrder:0,active:false });
-const blankProduct = () => ({ name:{en:'',ar:''}, slug:'', description:{en:'',ar:''},categoryId:'',price:'',compareAt:'',stockQuantity:0,featured:false,status:'draft' });
+const blankSize = (grams='250') => ({grams,price:'',compareAt:'',grindOptions:[]});
+const blankProduct = () => ({ name:{en:'',ar:''}, slug:'', description:{en:'',ar:''},categoryId:'',sizes:[blankSize()],featured:false,status:'draft' });
 const slugify = value => value.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,96);
 const displayMoney = value => typeof value === 'number' ? new Intl.NumberFormat('en-EG',{style:'currency',currency:'EGP'}).format(value/100) : '—';
 const fromPiastres = value => value == null ? '' : (value/100).toFixed(2);
@@ -55,9 +57,12 @@ export default function CatalogAdmin() {
   async function submitProduct(e){
     e.preventDefault();setError('');setNotice('');setBusy(true);
     try {
-      const pricePiastres=toPiastres(prodDraft.price,true);
-      const compareAtPiastres=toPiastres(prodDraft.compareAt,false);
-      const body={name:prodDraft.name,slug:prodDraft.slug,description:prodDraft.description,categoryId:prodDraft.categoryId,pricePiastres,compareAtPiastres,stockQuantity:Number(prodDraft.stockQuantity),featured:prodDraft.featured,status:prodDraft.status};
+      const sizes=(prodDraft.sizes||[]).map(s=>({
+        grams:Number(s.grams),pricePiastres:toPiastres(s.price,true),
+        compareAtPiastres:toPiastres(s.compareAt,false),
+        grindOptions:(s.grindOptions||[]).map(g=>({code:g.code,stockQuantity:Number(g.stockQuantity)}))
+      }));
+      const body={name:prodDraft.name,slug:prodDraft.slug,description:prodDraft.description,categoryId:prodDraft.categoryId,sizes,featured:prodDraft.featured,status:prodDraft.status};
       const editing=Boolean(prodDraft._id);
       await api(editing?`/admin/catalog/products/${prodDraft._id}`:'/admin/catalog/products',{method:editing?'PATCH':'POST',body:editing?{...body,revision:prodDraft.revision}:body});
       setProdDraft(null);setNotice(ar?'تم حفظ المنتج كمسودة.':'Product draft saved.');await load();
@@ -75,7 +80,10 @@ export default function CatalogAdmin() {
     try{await api(`/admin/catalog/categories/${category._id}`,{method:'DELETE'});setNotice(ar?'تم الحذف.':'Category deleted.');await load()}
     catch(err){setError(err.message)}finally{setBusy(false)}
   }
-  const editProduct = p => setProdDraft({...p,categoryId:String(p.categoryId),price:fromPiastres(p.pricePiastres),compareAt:fromPiastres(p.compareAtPiastres)});
+  const editProduct = p => setProdDraft({...p,categoryId:String(p.categoryId),sizes:(p.sizes||[]).map(s=>({
+    grams:String(s.grams),price:fromPiastres(s.pricePiastres),compareAt:fromPiastres(s.compareAtPiastres),grindOptions:s.grindOptions||[]
+  }))});
+  const editSize = (index,change) => setProdDraft(p=>({...p,sizes:p.sizes.map((s,i)=>i===index?{...s,...change}:s)}));
   const switchTab = t => <button key={t} type="button" className={tab===t?'selected':''} onClick={()=>showTab(t)}>{ar?({orders:'الطلبات',products:'المنتجات',categories:'الفئات'}[t]):t[0].toUpperCase()+t.slice(1)}</button>;
   return <main className="qc-admin">
     <div className="qc-admin-head"><div><p className="kicker">QUANTUM COFFEE / ADMIN</p><h1>{ar?'لوحة الإدارة':'Store Administration'}</h1><p>{session.user?.email}</p></div><button className="qc-admin-secondary" type="button" onClick={async()=>{try{await session.logout();window.location.assign(url('/login'))}catch(e){setError(e.message)}}}>{ar?'خروج':'Sign out'}</button></div>
@@ -106,15 +114,34 @@ export default function CatalogAdmin() {
         <label>URL slug<input required readOnly={Boolean(prodDraft._id)} value={prodDraft.slug} onChange={e=>setProdDraft({...prodDraft,slug:slugify(e.target.value)})}/></label>
         {bilingualField(prodDraft,setProdDraft,'description','Description',true)}
         <label>Category<select value={prodDraft.categoryId} onChange={e=>setProdDraft({...prodDraft,categoryId:e.target.value})}>{categories.map(c=><option key={c._id} value={c._id}>{c.name[lang]||c.name.en}</option>)}</select></label>
-        <div className="qc-admin-two"><label>Price (EGP)<input type="text" inputMode="decimal" required value={prodDraft.price} onChange={e=>setProdDraft({...prodDraft,price:e.target.value})}/></label><label>Compare-at price (EGP)<input type="text" inputMode="decimal" value={prodDraft.compareAt} onChange={e=>setProdDraft({...prodDraft,compareAt:e.target.value})}/></label></div>
-        <label>Stock quantity<input type="number" min="0" max="1000000" required value={prodDraft.stockQuantity} onChange={e=>setProdDraft({...prodDraft,stockQuantity:e.target.value})}/></label>
+        <div className="qc-grind-admin">
+          <div className="qc-admin-row"><h3>{ar?'الأحجام المتاحة':'Product sizes'}</h3>
+            <button type="button" className="qc-admin-secondary" disabled={prodDraft.sizes.length>=12} onClick={()=>setProdDraft(p=>({...p,sizes:[...p.sizes,blankSize('')] }))}>{ar?'إضافة حجم':'Add size'}</button>
+          </div>
+          <p className="qc-admin-tip">{ar?'لكل حجم سعره واختيارات طحن ومخزون مستقل. لا توجد رسوم إضافية للمحوج.':'Each size has its own price, grinds, and inventory. Spiced preparation has no surcharge.'}</p>
+          {prodDraft.sizes.map((s,index)=><div className="qc-size-admin" key={index}>
+            <div className="qc-admin-row"><b>{ar?'حجم':'Size'} {index+1}</b>
+              {prodDraft.sizes.length>1&&<button className="qc-admin-secondary" type="button" onClick={()=>setProdDraft(p=>({...p,sizes:p.sizes.filter((_,i)=>i!==index)}))}>{ar?'حذف الحجم':'Remove size'}</button>}
+            </div>
+            <div className="qc-admin-two">
+              <label>{ar?'الوزن بالجرام':'Weight (grams)'}<input type="number" required min="1" max="50000" value={s.grams} onChange={e=>editSize(index,{grams:e.target.value})}/></label>
+              <label>{ar?'السعر بالجنيه':'Price (EGP)'}<input type="text" inputMode="decimal" required value={s.price} onChange={e=>editSize(index,{price:e.target.value})}/></label>
+              <label>{ar?'السعر قبل الخصم (اختياري)':'Compare-at (optional)'}<input type="text" inputMode="decimal" value={s.compareAt} onChange={e=>editSize(index,{compareAt:e.target.value})}/></label>
+            </div>
+            {PREPARATIONS.map(g=>{const option=s.grindOptions?.find(o=>o.code===g.code);return <div className="qc-grind-admin-row" key={g.code}>
+              <label className="qc-admin-checkbox"><input type="checkbox" checked={Boolean(option)} onChange={e=>editSize(index,{grindOptions:e.target.checked?[...(s.grindOptions||[]),{code:g.code,stockQuantity:10}]:s.grindOptions.filter(o=>o.code!==g.code)})}/>{g[lang]}</label>
+              {option&&<label>Stock <input type="number" min="0" max="100000" required value={option.stockQuantity} onChange={e=>editSize(index,{grindOptions:s.grindOptions.map(o=>o.code===g.code?{...o,stockQuantity:e.target.value}:o)})}/></label>}
+            </div>})}
+            <p className="qc-admin-tip">Stock: {(s.grindOptions||[]).reduce((n,g)=>n+(Number(g.stockQuantity)||0),0)} bags</p>
+          </div>)}
+        </div>
         <label className="qc-admin-checkbox"><input type="checkbox" checked={prodDraft.featured} onChange={e=>setProdDraft({...prodDraft,featured:e.target.checked})}/>Best seller / featured selection</label>
         <label>Publication status<select value={prodDraft.status} onChange={e=>setProdDraft({...prodDraft,status:e.target.value})}><option value="draft">Draft</option><option value="published" disabled={!prodDraft._id||!prodDraft.imageKeys?.length}>Published</option><option value="archived">Archived</option></select></label>
         <p className="qc-admin-tip">Publish only after you have verified at least one R2 image and activated the category. Checkout stays disabled.</p>
-        {prodDraft._id&&<MediaEditor key={prodDraft._id} kind="product" record={prodDraft} onChange={updated=>setProdDraft(d=>({...d,...updated,price:d.price,compareAt:d.compareAt}))} onRefresh={load}/>}
+        {prodDraft._id&&<MediaEditor key={prodDraft._id} kind="product" record={prodDraft} onChange={updated=>setProdDraft(d=>({...d,...updated,sizes:d.sizes}))} onRefresh={load}/>}
         <div className="qc-admin-row"><button className="qc-admin-primary" disabled={busy}>Save product</button><button type="button" className="qc-admin-secondary" onClick={()=>setProdDraft(null)}>Cancel</button></div>
       </form>}
-      <div className="qc-admin-list">{products.map(p=><div className="qc-admin-list-item" key={p._id}><div><b>{p.name[lang]||p.name.en}</b><p>{displayMoney(p.pricePiastres)} {p.compareAtPiastres!=null&&<s>{displayMoney(p.compareAtPiastres)}</s>} · {p.status} · stock {p.stockQuantity}</p></div><div><button type="button" onClick={()=>editProduct(p)}>Edit</button><button type="button" disabled={busy||p.status==='archived'} onClick={()=>archiveProduct(p)}>Archive</button></div></div>)}{!products.length&&!loading&&<p>{ar?'لا توجد منتجات.':'No products yet.'}</p>}</div>
+      <div className="qc-admin-list">{products.map(p=><div className="qc-admin-list-item" key={p._id}><div><b>{p.name[lang]||p.name.en}</b><p>{displayMoney(p.pricePiastres)} {p.compareAtPiastres!=null&&<s>{displayMoney(p.compareAtPiastres)}</s>} · {p.status} · {p.sizes?.length||0} sizes · total stock {p.stockQuantity}</p></div><div><button type="button" onClick={()=>editProduct(p)}>Edit</button><button type="button" disabled={busy||p.status==='archived'} onClick={()=>archiveProduct(p)}>Archive</button></div></div>)}{!products.length&&!loading&&<p>{ar?'لا توجد منتجات.':'No products yet.'}</p>}</div>
       {pagination.pages>1&&<div className="qc-admin-row"><button type="button" disabled={page<=1} onClick={()=>setPage(p=>p-1)}>Previous</button><span>{page}/{pagination.pages}</span><button type="button" disabled={page>=pagination.pages} onClick={()=>setPage(p=>p+1)}>Next</button></div>}
     </section>}
     <p className="qc-admin-return"><Link to={url('/')}>{ar?'العودة للموقع':'Return to storefront'}</Link></p>

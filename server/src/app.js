@@ -16,7 +16,7 @@ export function createApp() {
   const origins = new Set((process.env.CLIENT_ORIGIN || 'http://127.0.0.1:5173,http://localhost:5173').split(',').map(x => x.trim()).filter(Boolean));
   app.use(helmet());
   app.use(cors({ origin(origin, callback) { callback(null, !origin || origins.has(origin)); }, credentials: true }));
-  app.use(express.json({ limit: '16kb' }));
+  app.use(express.json({ limit: '16kb', inflate: false }));
   app.use('/api', (req, res, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       // Cookie-authenticated writes from browsers must originate at an approved site.

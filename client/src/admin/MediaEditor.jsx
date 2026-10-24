@@ -18,7 +18,7 @@ export default function MediaEditor({kind,record,onChange,onRefresh}) {
   const upload=async(file)=>{
     if(!file)return;
     if(!TYPES.includes(file.type)||file.size===0||file.size>MAX)throw new Error('Choose JPEG, PNG or WebP under 5 MB.');
-    if(isProduct&&keys.length>=12)throw new Error('Maximum 12 product images.');
+    if(isProduct&&keys.length>=24)throw new Error('Maximum 24 product images.');
     const intent=await api('/admin/media/intent',{method:'POST',body:{contentType:file.type,size:file.size}});
     const put=await fetch(intent.url,{method:'PUT',headers:intent.headers,body:file});
     if(!put.ok)throw new Error(`R2 upload failed (${put.status}). Check the bucket CORS configuration.`);

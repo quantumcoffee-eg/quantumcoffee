@@ -23,9 +23,9 @@ async function loadLines(items, session) {
   const categories = await Category.find({_id:{$in:products.map(x=>x.categoryId)},active:true}).select('_id').session(session||null).lean();
   const allowed = new Set(categories.map(c=>String(c._id)));
   const lookup = new Map(products.filter(p=>allowed.has(String(p.categoryId))).map(p=>[String(p._id),p]));
-  return items.map(item=>({product:lookup.get(item.productId),quantity:item.quantity}));
+  return items.map(item=>({product:lookup.get(item.productId),quantity:item.quantity,sizeGrams:item.sizeGrams,grindCode:item.grindCode}));
 }
-const publicLine = line=>({productId:String(line.productId),slug:line.slug,name:line.name,imageUrl:imageUrl(line.imageKey),quantity:line.quantity,unitPricePiastres:line.unitPricePiastres,lineTotalPiastres:line.lineTotalPiastres});
+const publicLine = line=>({productId:String(line.productId),slug:line.slug,name:line.name,imageUrl:imageUrl(line.imageKey),grindCode:line.grindCode,packGrams:line.packGrams,quantity:line.quantity,unitPricePiastres:line.unitPricePiastres,lineTotalPiastres:line.lineTotalPiastres});
 const rejectionReason = order => order.paymentState==='rejected' ? [...(order.paymentHistory||[])].reverse().find(entry=>entry.state==='rejected')?.reason || '' : '';
 const orderSummary = order => ({id:String(order._id),orderNumber:order.orderNumber,createdAt:order.createdAt,fulfillmentState:order.fulfillmentState,paymentMethod:order.paymentMethod,paymentState:order.paymentState,subtotalPiastres:order.subtotalPiastres,shippingPiastres:order.shippingPiastres,totalPiastres:order.totalPiastres,lines:order.lines.map(publicLine),history:(order.history||[]).map(h=>({status:h.status,at:h.at})),paymentProofSubmitted:order.paymentState==='awaiting_verification'||order.paymentState==='paid',paymentRejectionReason:rejectionReason(order),revision:order.revision});
 const adminSummary = order => ({...orderSummary(order),customer:order.customer,userId:order.userId?String(order.userId):null,paymentProofId:order.paymentProofId?String(order.paymentProofId):null,paymentHistory:(order.paymentHistory||[]).map(h=>({state:h.state,at:h.at,reason:h.reason}))});
@@ -36,11 +36,14 @@ commerceRoutes.post('/cart',rateLimit({limit:120}),run(async(req,res)=>{
   if (!req.body.items.length) return res.json({items:[],subtotalPiastres:0});
   const items=validateItems(req.body.items);
   const lines=await loadLines(items);
-  const products=lines.map(({product,quantity},index)=>({
-    productId:items[index].productId,quantity,slug:product?.slug||'',name:product?.name||{en:'Unavailable'},
-    imageUrl:imageUrl(product?.imageKeys?.[0]),pricePiastres:product?.pricePiastres||0,
-    stockQuantity:product?.stockQuantity||0,available:Boolean(product?.status==='published')
-  }));
+  const products=lines.map(({product,quantity,grindCode,sizeGrams},index)=>{
+    const size=product?.sizes?.find(s=>s.grams===sizeGrams);
+    const variant=size?.grindOptions?.find(g=>g.code===grindCode);
+    return {productId:items[index].productId,grindCode,sizeGrams,quantity,slug:product?.slug||'',
+      name:product?.name||{en:'Unavailable'},imageUrl:imageUrl(product?.imageKeys?.[0]),
+      pricePiastres:size?.pricePiastres||0,stockQuantity:variant?.stockQuantity||0,
+      available:Boolean(product?.status==='published'&&variant)};
+  });
   res.json({items:products,subtotalPiastres:products.reduce((sum,p)=>sum+(p.available?p.pricePiastres*p.quantity:0),0)});
 }));
 commerceRoutes.post('/quote',rateLimit({limit:100}),run(async(req,res)=>{
@@ -75,7 +78,11 @@ commerceRoutes.post('/checkout',rateLimit({limit:10,windowMs:60*60*1000}),run(as
       const totalPiastres=subtotalPiastres+shippingPiastres;
       if (!Number.isSafeInteger(totalPiastres)||totalPiastres>1_000_000_000)throw new CommerceError('Order total exceeds the allowed limit.');
       for(const item of lines){
-        const updated=await Product.updateOne({_id:item.productId,status:'published',stockQuantity:{$gte:item.quantity}},{$inc:{stockQuantity:-item.quantity,revision:1}},{session});
+        const updated=await Product.updateOne({
+          _id:item.productId,status:'published',stockQuantity:{$gte:item.quantity},
+          sizes:{$elemMatch:{grams:item.packGrams,grindOptions:{$elemMatch:{code:item.grindCode,stockQuantity:{$gte:item.quantity}}}}}
+        },{$inc:{stockQuantity:-item.quantity,'sizes.$[s].grindOptions.$[g].stockQuantity':-item.quantity,revision:1}},
+        {session,arrayFilters:[{'s.grams':item.packGrams},{'g.code':item.grindCode,'g.stockQuantity':{$gte:item.quantity}}]});
         if(updated.modifiedCount!==1)throw new CommerceError('Stock changed during checkout. Refresh the cart.','OUT_OF_STOCK',409);
       }
       const paymentState=data.paymentMethod==='cod'?'unpaid':'awaiting_transfer';
@@ -139,7 +146,12 @@ adminOrdersRoutes.patch('/:id/status',run(async(req,res)=>{
     await mongoose.connection.transaction(async session=>{
       updated=await Order.findOneAndUpdate({_id:order._id,revision:order.revision},{$set:{fulfillmentState:next},$inc:{revision:1},$push:{history:{status:next,at:now,by:req.authUser._id}}},{new:true,session,runValidators:true});
       if(!updated)throw new CommerceError('Order changed. Reload first.','EDIT_CONFLICT',409);
-      for(const line of order.lines)await Product.updateOne({_id:line.productId},{$inc:{stockQuantity:line.quantity,revision:1}},{session});
+      for(const line of order.lines){
+        const restored=await Product.updateOne({_id:line.productId,sizes:{$elemMatch:{grams:line.packGrams,'grindOptions.code':line.grindCode}}},
+          {$inc:{stockQuantity:line.quantity,'sizes.$[s].grindOptions.$[g].stockQuantity':line.quantity,revision:1}},
+          {session,arrayFilters:[{'s.grams':line.packGrams},{'g.code':line.grindCode}]});
+        if(restored.modifiedCount!==1)throw new CommerceError('Could not safely restore variant stock.','RESTOCK_FAILED',409);
+      }
     });
   }else{
     updated=await Order.findOneAndUpdate({_id:order._id,revision:order.revision},{$set:{fulfillmentState:next},$inc:{revision:1},$push:{history:{status:next,at:now,by:req.authUser._id}}},{new:true,runValidators:true});
