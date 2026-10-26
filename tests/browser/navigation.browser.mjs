@@ -226,7 +226,9 @@ for (const lang of ['en', 'ar']) {
       const p = await pageFor(t, { lang, width, role: 'admin' });
       for (const path of ['/shop', '/products/browser-fixture', '/cart', '/admin?tab=products', '/unknown-route', '/about']) {
         await p.goto(`${origin}${local(lang, path)}`);
-        await p.locator('main').waitFor();
+        // Suspense can retain the previous main hidden while its fallback is
+        // visible. The logo must remain usable during that loading state too.
+        await p.locator('main:visible').waitFor();
         assert.equal(await p.locator('.brand-link').getAttribute('href'), local(lang));
         await p.locator('.brand-link').click();
         await at(p, local(lang));
@@ -472,6 +474,7 @@ test('admin media reorder preserves unsaved product edits and serializes price c
 
 test('query-only filters keep scroll and homepage links clear query/fragment smoothly', async t => {
   const p = await pageFor(t, { path: '/shop', catalog: true });
+  await p.locator('.shop-controls select').waitFor(); // Route code may still be loading when the shared header appears.
   await p.evaluate(() => scrollTo({ top: 100, behavior: 'instant' }));
   await p.locator('.shop-controls select').selectOption('newest');
   await at(p, '/shop?sort=newest');

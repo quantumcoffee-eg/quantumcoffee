@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useLocale } from '../lib/i18n.jsx';
 
@@ -13,11 +13,12 @@ export default function StoreSettingsAdmin(){
   const {lang}=useLocale(),ar=lang==='ar';
   const [draft,setDraft]=useState(null),[revision,setRevision]=useState(0),[pending,setPending]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [rates,setRates]=useState({cairoGiza:'',other:''});
-  async function load(){setPending(true);setError('');try{
-    const result=await api('/admin/store/settings');setDraft(result.settings);setRevision(result.revision);
+  const activeRead=useRef(null);
+  async function load(){activeRead.current?.abort();const controller=new AbortController();activeRead.current=controller;const signal=controller.signal;setPending(true);setError('');try{
+    const result=await api('/admin/store/settings',{signal});if(signal?.aborted)return;setDraft(result.settings);setRevision(result.revision);
     setRates({cairoGiza:toEGP(result.settings.shipping.cairoGizaPiastres),other:toEGP(result.settings.shipping.otherPiastres)});
-  }catch(e){setError(e.message)}finally{setPending(false)}}
-  useEffect(()=>{void load()},[]);
+  }catch(e){if(!signal.aborted)setError(e.message)}finally{if(!signal.aborted)setPending(false);if(activeRead.current===controller)activeRead.current=null}}
+  useEffect(()=>{void load();return()=>activeRead.current?.abort()},[]);
   const contact=(field,v)=>setDraft(p=>({...p,contact:{...p.contact,[field]:v}}));
   const payment=(method,field,v)=>setDraft(p=>({...p,payments:{...p.payments,[method]:{...p.payments[method],[field]:v}}}));
   const policy=(kind,language,v)=>setDraft(p=>({...p,policies:{...p.policies,[kind]:{...p.policies[kind],[language]:v}}}));
@@ -26,7 +27,7 @@ export default function StoreSettingsAdmin(){
     const result=await api('/admin/store/settings',{method:'PUT',body:{revision,settings}});
     setDraft(result.settings);setRevision(result.revision);setNotice(ar?'تم حفظ إعدادات المتجر.':'Store settings saved.');
   }catch(e){setError(e.message)}finally{setSaving(false)}}
-  return <section className="qc-admin-panel">
+  return <section className="qc-admin-panel" aria-busy={pending}>
     <div className="qc-admin-row"><h2>{ar?'إعدادات المتجر':'Store Settings'}</h2><button type="button" className="qc-admin-secondary" onClick={()=>void load()}>{ar?'تحديث':'Reload'}</button></div>
     <p className="qc-admin-tip">{ar?'أضف بيانات المالك المعتمدة فقط. حفظ البيانات لا يفتح الطلبات أو التسجيل.':'Enter only owner-approved details. Saving settings cannot enable checkout or registration.'}</p>
     {pending&&<p role="status">{ar?'تحميل…':'Loading settings…'}</p>}

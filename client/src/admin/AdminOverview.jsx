@@ -24,12 +24,13 @@ export default function AdminOverview() {
     const controller = new AbortController();
     setState({ status: 'loading', data: null, error: null });
     api(`/admin/overview?range=${range}`, { signal: controller.signal }).then(result => {
-      if (!result.overview?.series?.length) throw new Error('Invalid overview response.');
+      if (!result.overview?.series?.length || result.overview.period?.range !== range) throw new Error('Invalid overview response.');
       if (!controller.signal.aborted) setState({ status: 'ready', data: result.overview, error: null });
     }).catch(error => { if (!controller.signal.aborted) setState({ status: 'error', data: null, error }); });
     return () => controller.abort();
   }, [range, retry]);
-  const data = state.data;
+  const isLoading = state.status === 'loading' || (state.status === 'ready' && state.data?.period.range !== range);
+  const data = !isLoading ? state.data : null;
   const productLink = id => url(`/admin?tab=products&product=${encodeURIComponent(id)}`);
   const changeRange = value => { const next = new URLSearchParams(params); next.set('tab', 'overview'); next.set('range', value); setParams(next); };
   const attention = [
@@ -37,11 +38,11 @@ export default function AdminOverview() {
     ['packingShipping', '/admin?tab=orders&queue=packing_shipping'], ['unpaidDigital', '/admin?tab=orders&queue=unpaid_digital'],
     ['lowStock', '/admin?tab=overview#inventory-alerts'], ['draftProducts', '/admin?tab=products&status=draft'],
   ];
-  return <section className="qc-overview" aria-labelledby="qc-overview-title" aria-busy={state.status === 'loading'}>
+  return <section className="qc-overview" aria-labelledby="qc-overview-title" aria-busy={isLoading}>
     <div className="qc-overview-heading"><div><h2 id="qc-overview-title">{t('overview')}</h2><p>{t('subtitle')}</p></div>
       <div className="qc-overview-tools"><div className="qc-overview-periods" role="group" aria-label={t('period')}>{periods.map(period => <button key={period} type="button" aria-pressed={range === period} onClick={() => changeRange(period)}>{t(period)}</button>)}</div><button type="button" className="qc-overview-refresh" aria-label={t('refresh')} title={t('refresh')} disabled={state.status === 'loading'} onClick={() => setRetry(value => value + 1)}><RefreshCw size={17} aria-hidden="true" /></button></div>
     </div>
-    {state.status === 'loading' && <div className="qc-overview-loading" role="status"><p>{t('loading')}</p><div aria-hidden="true" className="qc-overview-skeleton"><span/><span/><span/><span/></div></div>}
+    {isLoading && <div className="qc-overview-loading" role="status"><p>{t('loading')}</p><div aria-hidden="true" className="qc-overview-skeleton"><span/><span/><span/><span/></div></div>}
     {state.status === 'error' && <div className="qc-overview-error" role="alert"><h3>{t('error')}</h3><p>{[401, 403].includes(state.error?.status) ? t('access') : state.error?.message}</p><button className="qc-admin-secondary" type="button" onClick={() => setRetry(value => value + 1)}>{t('retry')}</button></div>}
     {data && <>
       <p className="qc-overview-updated">{t('updated')} <time dateTime={data.calculatedAt}>{overviewDate(data.calculatedAt, lang, true)}</time> · {t('cairo')}</p>

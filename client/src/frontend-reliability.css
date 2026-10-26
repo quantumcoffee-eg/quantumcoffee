@@ -1,0 +1,19 @@
+/* Loading space keeps global footer/independent panels out of the first frame. */
+.qc-route-placeholder { min-block-size:100svh; padding:4rem max(1rem,5vw); background:#100e0c; color:#e9dfd3; }
+.qc-route-loading { min-block-size:75svh; padding:3rem 1rem; color:#d8c3ad; }
+.qc-route-error { display:grid; align-content:start; justify-items:start; gap:1.2rem; padding:2rem 1rem; min-block-size:60svh; }
+.qc-admin-panel[aria-busy=true] { min-block-size:75svh; align-content:start; }
+.qc-product-page[aria-busy=true] { min-block-size:100svh; }
+.qc-overview-loading { min-block-size:100svh; }
+.qc-image-fallback { display:grid; place-items:center; width:100%; height:100%; min-height:4rem; color:inherit; }
+.qc-catalog-note { gap:1rem; }
+.qc-skip-link { position:fixed; inset-block-start:.5rem; inset-inline-start:1rem; transform:translateY(-180%); z-index:120; padding:.8rem 1.1rem; background:#e9dfd3; color:#100e0c; border:2px solid #a47148; }
+.qc-skip-link:focus { transform:none; }
+.shop-search:focus-within { outline:3px solid #ddb58b; outline-offset:4px; }
+textarea:focus-visible { outline:3px solid #ddb58b; outline-offset:4px; }
+main:focus-visible { outline:2px solid #ddb58b; outline-offset:-2px; }
+.announcement { position:relative; }
+.qc-announcement-control { position:absolute; inset-inline-end:0; inset-block-start:0; z-index:2; display:grid; place-items:center; width:28px; height:28px; border:0; border-inline-start:1px solid #634730; background:#2b1c12; color:#e0c3a0; cursor:pointer; }
+.qc-announcement-control:focus-visible { outline:2px solid #ddb58b; outline-offset:-3px; }
+.qc-announcement-control:hover { background:#412d1c; }
+@media(prefers-reduced-motion:reduce){.qc-announcement-control{display:none}}

@@ -9,11 +9,8 @@ export default function NavigationEffects() {
   const positions = useRef(new Map());
   const previous = useRef(null);
   useLayoutEffect(() => {
-    const prior = window.history.scrollRestoration;
-    window.history.scrollRestoration = 'manual';
-    return () => { window.history.scrollRestoration = prior; };
-  }, []);
-  useLayoutEffect(() => {
+    const main = document.querySelector('main');
+    if (main) { main.id = 'main-content'; main.tabIndex = -1; }
     const saved = positions.current.get(key);
     if (navigationType === 'POP' && saved) {
       window.scrollTo({ ...saved, behavior: 'instant' });

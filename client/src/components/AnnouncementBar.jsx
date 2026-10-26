@@ -1,13 +1,15 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { Atom, Coffee, Orbit } from 'lucide-react';
+import { Atom, Coffee, Orbit, Pause, Play } from 'lucide-react';
 import { useLocale } from '../lib/i18n.jsx';
 import { marqueeCopies, marqueeDurationSeconds } from './announcement-values.mjs';
+import { uiText } from '../lib/ui-copy.js';
 
 // Two identical, gap-free groups are animated by exactly one group width.
 // Each group is wider than the viewport, so no empty strip can enter the frame.
 export default function AnnouncementBar() {
   const { t, lang } = useLocale();
   const message = t('announcement');
+  const [paused, setPaused] = useState(false);
   // The words are unchanged; replace only the decorative separators.
   const phrases = message.split('✦').map(part => part.trim()).filter(Boolean);
   const icons = [Atom, Coffee, Orbit, Coffee];
@@ -51,8 +53,9 @@ export default function AnnouncementBar() {
 
   return <div className="announcement" ref={viewportRef}>
     <span className="qc-announcement-sr-only">{phrases.join(' — ')}</span>
-    <div className="qc-announcement-track" aria-hidden="true" style={{ '--qc-marquee-duration': `${layout.duration}s` }}>
+    <div className="qc-announcement-track" aria-hidden="true" style={{ '--qc-marquee-duration': `${layout.duration}s`, animationPlayState: paused ? 'paused' : undefined }}>
       {group(false)}{group(true)}
     </div>
+    <button type="button" className="qc-announcement-control" aria-pressed={paused} aria-label={uiText(lang, paused ? 'resume' : 'pause')} title={uiText(lang, paused ? 'resume' : 'pause')} onClick={()=>setPaused(value=>!value)}>{paused ? <Play size={12} aria-hidden="true"/> : <Pause size={12} aria-hidden="true"/>}</button>
   </div>;
 }

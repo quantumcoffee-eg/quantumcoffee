@@ -66,9 +66,9 @@ export default function Header() {
     <AnnouncementBar />
     <header className="site-header">
       <div className="header-inner">
-        <button ref={menuButtonRef} className="icon-button mobile-menu" type="button" aria-label={open ? 'Close menu' : 'Open menu'} aria-controls="qc-mobile-navigation" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? <X size={23} /> : <Menu size={23} />}</button>
+        <button ref={menuButtonRef} className="icon-button mobile-menu" type="button" aria-label={open ? (lang === 'ar' ? 'إغلاق القائمة' : 'Close menu') : (lang === 'ar' ? 'فتح القائمة' : 'Open menu')} aria-controls="qc-mobile-navigation" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? <X size={23} aria-hidden="true"/> : <Menu size={23} aria-hidden="true"/>}</button>
         <Link className="brand-link" to={url('/')} onClick={navigate('/')} aria-label={lang === 'ar' ? 'العودة للرئيسية' : 'Quantum Coffee home'}><img src="/quantum-logo-light.webp" alt="Quantum Coffee" width="337" height="310" /></Link>
-        <nav className="desktop-links" aria-label="Main navigation">{links.map(item => <NavLink key={item.to} to={url(item.to)} onClick={navigate(item.to)} end={item.to === '/'}>{item.label}</NavLink>)}</nav>
+        <nav className="desktop-links" aria-label={lang === 'ar' ? 'التنقل الرئيسي' : 'Main navigation'}>{links.map(item => <NavLink key={item.to} to={url(item.to)} onClick={navigate(item.to)} end={item.to === '/'}>{item.label}</NavLink>)}</nav>
         <div className="header-actions">
           <Link className="icon-button" title={role === 'admin' ? t('admin') : role === 'customer' ? t('account') : t('login')} aria-label={role === 'admin' ? t('admin') : role === 'customer' ? t('account') : t('login')} to={url(accountDestination)} onClick={navigate(accountDestination)}><UserRound size={20} strokeWidth={1.7} /></Link>
           <Link className="icon-button" to={url('/cart')} onClick={navigate('/cart')} aria-label={t('cart')} title={t('cart')}><ShoppingBag size={20} strokeWidth={1.7} />{count > 0 && <span className="qc-cart-count" aria-hidden="true">{count > 99 ? '99+' : count}</span>}</Link>

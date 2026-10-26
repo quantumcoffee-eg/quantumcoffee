@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Coffee } from 'lucide-react';
+import SafeImage from '../components/SafeImage.jsx';
 import { useLocale } from '../lib/i18n.jsx';
 import { api } from '../lib/api.js';
+import { uiText } from '../lib/ui-copy.js';
 import { useCart } from '../commerce/CartProvider.jsx';
 import { money,translated } from '../components/CatalogCards.jsx';
 import { preparationName } from '../lib/grinds.js';
@@ -12,19 +13,20 @@ import { initialSelection, selectedStock } from './product-selection.mjs';
 export default function ProductPage() {
   const {slug}=useParams(),{lang,url,t}=useLocale();const setSeoProduct=useSetProductSeo();const {add}=useCart();const [quantity,setQuantity]=useState(1),[sizeGrams,setSizeGrams]=useState(0),[grindCode,setGrindCode]=useState(''),[added,setAdded]=useState(false);
   const [data,setData]=useState(null),[error,setError]=useState(''),[cartError,setCartError]=useState(''),[busy,setBusy]=useState(true),[selected,setSelected]=useState(0);
+  const [retry,setRetry]=useState(0);
   useEffect(()=>{const ctrl=new AbortController();setBusy(true);setError('');setData(null);setSelected(0);setAdded(false);setCartError('');
-    api(`/catalog/products/${encodeURIComponent(slug)}`,{signal:ctrl.signal}).then(result=>{setData(result.product);const initial=initialSelection(result.product);setSizeGrams(initial.sizeGrams);setGrindCode(initial.grindCode);setQuantity(1)}).catch(e=>{if(!ctrl.signal.aborted)setError(e.message)}).finally(()=>{if(!ctrl.signal.aborted)setBusy(false)});
-    return()=>ctrl.abort();},[slug]);
+    api(`/catalog/products/${encodeURIComponent(slug)}`,{signal:ctrl.signal}).then(result=>{if(ctrl.signal.aborted)return;if(!result.product || !Array.isArray(result.product.sizes))throw new Error('Invalid product response.');setData(result.product);const initial=initialSelection(result.product);setSizeGrams(initial.sizeGrams);setGrindCode(initial.grindCode);setQuantity(1)}).catch(e=>{if(!ctrl.signal.aborted)setError(e.message)}).finally(()=>{if(!ctrl.signal.aborted)setBusy(false)});
+    return()=>ctrl.abort();},[slug,retry]);
   useEffect(()=>{setSeoProduct(data?.slug===slug?data:null);return()=>setSeoProduct(null)},[data,slug,setSeoProduct]);
   const size=data?.sizes?.find(s=>s.grams===sizeGrams);
   const optionStock=selectedStock(data,sizeGrams,grindCode);
-  return <main className="qc-product-page">
+  return <main className="qc-product-page" aria-busy={busy}>
     <nav className="qc-breadcrumb"><Link to={url('/')}>{t('home')}</Link> / <Link to={url('/shop')}>{t('shop')}</Link> / {data?translated(data.name,lang):'...'}</nav>
-    {busy&&<div className="qc-catalog-note" role="status">{t('signingIn')}</div>}
-    {!busy&&error&&<div className="qc-catalog-note" role="alert">{error} <Link to={url('/shop')}>{t('shop')}</Link></div>}
+    {busy&&<div className="qc-catalog-note" role="status">{uiText(lang,'loading')}</div>}
+    {!busy&&error&&<div className="qc-catalog-note" role="alert">{error} <button type="button" className="button button-dark" onClick={()=>setRetry(n=>n+1)}>{t('retry')}</button><Link to={url('/shop')}>{t('shop')}</Link></div>}
     {!busy&&data&&<div className="qc-product-detail">
-      <div className="qc-product-gallery"><div className="qc-product-primary">{data.imageUrls?.[selected]?<img src={data.imageUrls[selected]} alt={translated(data.name,lang)} />:<Coffee size={72}/>}</div>
-        {data.imageUrls?.length>1&&<div className="qc-product-thumbs">{data.imageUrls.map((src,i)=><button type="button" key={src} aria-label={`${lang==='ar'?'صورة':'Image'} ${i+1}`} aria-pressed={i===selected} onClick={()=>setSelected(i)}><img src={src} alt="" loading="lazy"/></button>)}</div>}
+      <div className="qc-product-gallery"><div className="qc-product-primary"><SafeImage src={data.imageUrls?.[selected]} alt={translated(data.name,lang)} width="600" height="750" iconSize={72} fetchPriority="high"/></div>
+        {data.imageUrls?.length>1&&<div className="qc-product-thumbs">{data.imageUrls.map((src,i)=><button type="button" key={src} aria-label={`${lang==='ar'?'صورة':'Image'} ${i+1}`} aria-pressed={i===selected} onClick={()=>setSelected(i)}><SafeImage src={src} alt="" width="88" height="88" iconSize={24} loading="lazy"/></button>)}</div>}
       </div>
       <div className="qc-product-summary"><span className="kicker">QUANTUM COFFEE / COLLECTION</span><h1>{translated(data.name,lang)}</h1>
         <div className="qc-product-prices"><strong>{money(size?.pricePiastres||data.pricePiastres)}</strong>{size?.compareAtPiastres>size?.pricePiastres&&<s>{money(size.compareAtPiastres)}</s>}</div>

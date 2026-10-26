@@ -8,6 +8,7 @@ import { money, translated } from '../components/CatalogCards.jsx';
 import { preparationName } from '../lib/grinds.js';
 import './commerce.css';
 import PaymentProofUploader from './PaymentProofUploader.jsx';
+import SafeImage from '../components/SafeImage.jsx';
 
 const methods=['cod','instapay','vodafone_cash'];
 const governorates=['cairo','giza','alexandria','qalyubia','dakahlia','sharqia','gharbia','monufia','beheira','kafr_el_sheikh','damietta','port_said','ismailia','suez','north_sinai','south_sinai','red_sea','fayoum','beni_suef','minya','assiut','sohag','qena','luxor','aswan','new_valley','matrouh'];
@@ -27,8 +28,8 @@ function OrderCard({order,lang,onPaymentSubmitted}){
 export function CartPage(){
   const {items,count,update,remove}=useCart(),{lang,url}=useLocale(),ar=lang==='ar';
   const [lines,setLines]=useState([]),[pending,setPending]=useState(false),[error,setError]=useState('');
-  useEffect(()=>{const ctrl=new AbortController();setError('');setPending(true);api('/commerce/cart',{method:'POST',body:{items},signal:ctrl.signal})
-    .then(data=>setLines(data.items)).catch(e=>{if(!ctrl.signal.aborted)setError(e.message)}).finally(()=>{if(!ctrl.signal.aborted)setPending(false)});
+  useEffect(()=>{const ctrl=new AbortController();setError('');if(!items.length){setLines([]);setPending(false);return()=>ctrl.abort()}setPending(true);api('/commerce/cart',{method:'POST',body:{items},signal:ctrl.signal})
+    .then(data=>{if(!ctrl.signal.aborted)setLines(data.items)}).catch(e=>{if(!ctrl.signal.aborted)setError(e.message)}).finally(()=>{if(!ctrl.signal.aborted)setPending(false)});
     return()=>ctrl.abort();},[items]);
   const available=lines.length===items.length&&lines.every(p=>p.available&&p.stockQuantity>=p.quantity);
   return <Panel eyebrow="CART" title={text(ar,'Your Cart','سلة التسوق')}>
@@ -36,7 +37,7 @@ export function CartPage(){
       <p className="qc-commerce-muted">{text(ar,'Your selections are saved on this device. Prices and stock are checked against the store before checkout.','منتجاتك محفوظة على هذا الجهاز وسيتم التحقق من السعر والمخزون قبل الطلب.')}</p>
       <ErrorLine error={error}/>{pending&&<p role="status">{text(ar,'Checking cart…','جار مراجعة السلة…')}</p>}
       <div className="qc-cart-items">{lines.map(line=><article className="qc-cart-line" key={`${line.productId}:${line.sizeGrams}:${line.grindCode}`}>
-        <div className="qc-cart-thumb">{line.imageUrl&&<img src={line.imageUrl} alt="" loading="lazy"/>}</div><div><h2>{translated(line.name,lang)}</h2><p>{line.sizeGrams} g · {preparationName(line.grindCode,lang)}</p><p>{line.available?money(line.pricePiastres):text(ar,'Not available','غير متوفر')}</p>
+        <div className="qc-cart-thumb"><SafeImage src={line.imageUrl} alt="" width="120" height="150" iconSize={24} loading="lazy"/></div><div><h2>{translated(line.name,lang)}</h2><p>{line.sizeGrams} g · {preparationName(line.grindCode,lang)}</p><p>{line.available?money(line.pricePiastres):text(ar,'Not available','غير متوفر')}</p>
         <div className="qc-quantity"><button aria-label="Decrease quantity" disabled={line.quantity<=1} onClick={()=>update(line.productId,line.sizeGrams,line.grindCode,line.quantity-1)} type="button">−</button><span>{line.quantity}</span><button aria-label="Increase quantity" disabled={line.quantity>=Math.min(20,line.stockQuantity)} onClick={()=>update(line.productId,line.sizeGrams,line.grindCode,line.quantity+1)} type="button">+</button></div>
         {!line.available||line.stockQuantity<line.quantity?<p className="qc-commerce-error">{text(ar,'Unavailable or insufficient stock','الكمية غير متاحة')}</p>:null}
         <button className="qc-text-control" onClick={()=>remove(line.productId,line.sizeGrams,line.grindCode)} type="button">{text(ar,'Remove','حذف')}</button></div><strong>{line.available?money(line.pricePiastres*line.quantity):'—'}</strong>
@@ -53,7 +54,7 @@ export function CheckoutPage(){
   const [paymentMethod,setPaymentMethod]=useState('cod'),[quote,setQuote]=useState(null),[config,setConfig]=useState(null);
   const [error,setError]=useState(''),[busy,setBusy]=useState(false),[receipt,setReceipt]=useState(null);
   const [checkoutKey]=useState(()=>crypto.randomUUID());
-  useEffect(()=>{let active=true;api('/commerce/config').then(v=>{if(active)setConfig(v)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[]);
+  useEffect(()=>{const ctrl=new AbortController();api('/commerce/config',{signal:ctrl.signal}).then(v=>{if(!ctrl.signal.aborted)setConfig(v)}).catch(e=>{if(!ctrl.signal.aborted)setError(e.message)});return()=>ctrl.abort()},[]);
   useEffect(()=>{if(!items.length||receipt)return;const ctrl=new AbortController();setQuote(null);setError('');api('/commerce/quote',{method:'POST',body:{items,governorate:customer.governorate},signal:ctrl.signal})
     .then(data=>setQuote(data)).catch(e=>{if(!ctrl.signal.aborted)setError(e.message)});return()=>ctrl.abort();},[items,customer.governorate,receipt]);
   const change=key=>e=>setCustomer(old=>({...old,[key]:e.target.value}));
