@@ -1,9 +1,11 @@
 # Applies to Cloudflare Pages static responses (not Render API responses).
+# Entire site must remain out of search results before owner-approved launch.
 /*
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
+  X-Robots-Tag: noindex, nofollow
 
 # Vite outputs content-hashed assets; safe to cache aggressively.
 /assets/*

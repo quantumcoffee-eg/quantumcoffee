@@ -9,6 +9,7 @@ import ProductPage from './pages/ProductPage.jsx';
 import { AboutPage, AccountPage, AuthPage, LegalPage, AdminPage, NotFound, VerifyEmailPage, ResetPasswordPage, EmailRequestPage } from './pages/OtherPages.jsx';
 import { CartProvider } from './commerce/CartProvider.jsx';
 import { CartPage, CheckoutPage, OrdersPage, TrackPage } from './commerce/CartPages.jsx';
+import SeoRouter from './seo/SeoRouter.jsx';
 
 function Guard({ role, children }) {
   const { url, t } = useLocale();
@@ -20,7 +21,7 @@ function Guard({ role, children }) {
   return children;
 }
 function Layout() {
-  return <><Header/><Routes>
+  return <SeoRouter><Header/><Routes>
     <Route index element={<HomePage/>}/>
     <Route path="shop" element={<ShopPage/>}/>
     <Route path="products/:slug" element={<ProductPage/>}/>
@@ -42,7 +43,7 @@ function Layout() {
     <Route path="terms" element={<LegalPage/>}/>
     <Route path="admin/*" element={<Guard role="admin"><AdminPage/></Guard>}/>
     <Route path="*" element={<NotFound/>}/>
-  </Routes><Footer/></>;
+  </Routes><Footer/></SeoRouter>;
 }
 export default function App() {
   return <SessionProvider><CartProvider><LocaleProvider><Routes>

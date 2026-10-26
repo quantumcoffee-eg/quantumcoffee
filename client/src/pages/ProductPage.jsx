@@ -6,13 +6,15 @@ import { api } from '../lib/api.js';
 import { useCart } from '../commerce/CartProvider.jsx';
 import { money,translated } from '../components/CatalogCards.jsx';
 import { preparationName } from '../lib/grinds.js';
+import { useSetProductSeo } from '../seo/SeoRouter.jsx';
 
 export default function ProductPage() {
-  const {slug}=useParams(),{lang,url,t}=useLocale();const {add}=useCart();const [quantity,setQuantity]=useState(1),[sizeGrams,setSizeGrams]=useState(0),[grindCode,setGrindCode]=useState(''),[added,setAdded]=useState(false);
+  const {slug}=useParams(),{lang,url,t}=useLocale();const setSeoProduct=useSetProductSeo();const {add}=useCart();const [quantity,setQuantity]=useState(1),[sizeGrams,setSizeGrams]=useState(0),[grindCode,setGrindCode]=useState(''),[added,setAdded]=useState(false);
   const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(true),[selected,setSelected]=useState(0);
   useEffect(()=>{const ctrl=new AbortController();setBusy(true);setError('');setData(null);setSelected(0);
     api(`/catalog/products/${encodeURIComponent(slug)}`,{signal:ctrl.signal}).then(result=>{setData(result.product);const first=result.product.sizes?.[0];setSizeGrams(first?.grams||0);setGrindCode(first?.grindOptions?.find(o=>o.stockQuantity>0)?.code||first?.grindOptions?.[0]?.code||'');setQuantity(1)}).catch(e=>{if(!ctrl.signal.aborted)setError(e.message)}).finally(()=>{if(!ctrl.signal.aborted)setBusy(false)});
     return()=>ctrl.abort();},[slug]);
+  useEffect(()=>{setSeoProduct(data?.slug===slug?data:null);return()=>setSeoProduct(null)},[data,slug,setSeoProduct]);
   const size=data?.sizes?.find(s=>s.grams===sizeGrams);
   const option=size?.grindOptions?.find(o=>o.code===grindCode);
   const optionStock=option?.stockQuantity||0;

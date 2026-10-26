@@ -39,6 +39,7 @@ for (const key of ['REGISTRATION_ENABLED', 'CHECKOUT_ENABLED', 'ORDER_EMAILS_ENA
   verify(`${key} disabled in blueprint`, new RegExp(`- key: ${key}\\s+value: ['"]false['"]`).test(blueprint), 'Must start disabled.');
 }
 verify('Pages protection headers', pageHeaders.includes('X-Frame-Options: DENY') && pageHeaders.includes('Referrer-Policy:'), 'Add the Cloudflare Pages security header file.');
+verify('Pages prelaunch robot header', /X-Robots-Tag:\s*noindex,\s*nofollow/i.test(pageHeaders), 'Prelaunch requests must not be indexed.');
 verify('Hero media files', existsSync(resolve(root,'client/public/media/hero/quantum-hero.webp')) && existsSync(resolve(root,'client/public/media/hero/quantum-hero-mobile.webp')), 'Preserve the approved desktop/mobile hero assets.');
 try {
   const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
