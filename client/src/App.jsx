@@ -11,20 +11,17 @@ import NavigationEffects from './components/NavigationEffects.jsx';
 import FloatingLanguageSwitcher from './components/FloatingLanguageSwitcher.jsx';
 import RouteBoundary, { RouteLoading } from './components/RouteBoundary.jsx';
 import { uiText } from './lib/ui-copy.js';
+import { routeModules, loadAdminPage } from './lib/route-modules.js';
+import NavigationIntent from './components/NavigationIntent.jsx';
 
-const ShopPage = lazy(() => import('./pages/ShopPage.jsx'));
-const ProductPage = lazy(() => import('./pages/ProductPage.jsx'));
+const ShopPage = lazy(routeModules.shop);
+const ProductPage = lazy(routeModules.product);
 // Called only after Guard authorizes rendering. Load the requested panel and
 // shell together, avoiding a second cold-start waterfall or unrelated tab data.
-const AdminPage = lazy(async () => {
-  const tab = new URLSearchParams(window.location.search).get('tab');
-  const shell = import('./admin/CatalogAdmin.jsx');
-  const panel = tab === 'orders' ? import('./admin/AdminOrders.jsx') : tab === 'settings' ? import('./admin/StoreSettingsAdmin.jsx') : ['products','categories'].includes(tab) ? null : import('./admin/AdminOverview.jsx');
-  const [module] = await Promise.all([shell, panel]); return module;
-});
-const other = name => lazy(() => import('./pages/OtherPages.jsx').then(module => ({ default: module[name] })));
+const AdminPage = lazy(() => loadAdminPage(new URLSearchParams(window.location.search).get('tab')));
+const other = name => lazy(() => routeModules.other().then(module => ({ default: module[name] })));
 const AboutPage = other('AboutPage'), AccountPage = other('AccountPage'), AuthPage = other('AuthPage'), LegalPage = other('LegalPage'), NotFound = other('NotFound'), VerifyEmailPage = other('VerifyEmailPage'), ResetPasswordPage = other('ResetPasswordPage'), EmailRequestPage = other('EmailRequestPage');
-const commerce = name => lazy(() => import('./commerce/CartPages.jsx').then(module => ({ default: module[name] })));
+const commerce = name => lazy(() => routeModules.commerce().then(module => ({ default: module[name] })));
 const CartPage = commerce('CartPage'), CheckoutPage = commerce('CheckoutPage'), OrdersPage = commerce('OrdersPage'), TrackPage = commerce('TrackPage');
 
 function Guard({ role, children }) {
@@ -42,7 +39,7 @@ function Layout() {
     const previous = window.history.scrollRestoration; window.history.scrollRestoration = 'manual';
     return () => { window.history.scrollRestoration = previous; };
   }, []);
-  return <SeoRouter><a className="qc-skip-link" href="#main-content">{uiText(lang, 'skip')}</a><Header/><RouteBoundary><Suspense fallback={<RouteLoading/>}><NavigationEffects/><Routes>
+  return <SeoRouter><NavigationIntent/><a className="qc-skip-link" href="#main-content">{uiText(lang, 'skip')}</a><Header/><RouteBoundary><Suspense fallback={<RouteLoading/>}><NavigationEffects/><Routes>
     <Route index element={<HomePage/>}/>
     <Route path="shop" element={<ShopPage/>}/>
     <Route path="products/:slug" element={<ProductPage/>}/>

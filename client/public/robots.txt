@@ -1,0 +1,5 @@
+# PRELAUNCH: every HTML page and Pages response retains noindex,nofollow.
+# Crawl access lets bots read those directives; it does not authorize indexing.
+# No sitemap is advertised before approved content, domain and launch review.
+User-agent: *
+Disallow:

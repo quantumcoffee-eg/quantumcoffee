@@ -68,14 +68,14 @@ catalogRoutes.get('/products', asyncRoute(async (req, res) => {
   const sort = req.query.sort || 'discover';
   if (typeof sort !== 'string' || !Object.hasOwn(sorts, sort)) throw new CatalogInputError('Invalid sort order.');
   const [items,total] = await Promise.all([Product.find(filter).sort(sorts[sort]).skip(skip).limit(limit).lean(),Product.countDocuments(filter)]);
-  res.setHeader('Cache-Control','public, max-age=30, stale-while-revalidate=60');
+  res.setHeader('Cache-Control','no-store');
   res.json(response(items.map(publicProduct),total,page));
 }));
 catalogRoutes.get('/products/:slug', asyncRoute(async (req, res) => {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(req.params.slug)) return res.status(404).json({error:'Not found.'});
   const product=await Product.findOne({slug:req.params.slug,status:'published'}).lean();
   if (!product || !(await Category.exists({_id:product.categoryId,active:true}))) return res.status(404).json({error:'Product not found.',code:'NOT_FOUND'});
-  res.setHeader('Cache-Control','public, max-age=30, stale-while-revalidate=60');
+  res.setHeader('Cache-Control','no-store');
   res.json({product:publicProduct(product)});
 }));
 

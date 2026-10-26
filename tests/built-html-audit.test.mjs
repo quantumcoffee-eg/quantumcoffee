@@ -11,7 +11,8 @@ function withFixture(fn, origin = '') {
   const dist = mkdtempSync(join(tmpdir(), 'quantum-built-html-'));
   try {
     writeFileSync(join(dist, '_headers'), '/*\n  X-Robots-Tag: noindex, nofollow\n');
-    writeFileSync(join(dist, '_redirects'), '/* /index.html 200\n');
+    writeFileSync(join(dist, '_redirects'), '# Native Pages SPA fallback; existing static files take priority.\n');
+    writeFileSync(join(dist, 'robots.txt'), 'User-agent: *\nDisallow:\n');
     for (const route of STATIC_ROUTES) {
       const filename = join(dist, outputPathForRoute(route));
       mkdirSync(dirname(filename), {recursive:true});
@@ -32,7 +33,7 @@ test('built HTML audit recognizes canonical alternates only with valid HTTPS ori
 }, 'https://quantum.example'));
 
 test('built HTML audit rejects missing Arabic HTML and unintended private route', () => withFixture(dist => {
-  rmSync(join(dist, 'ar/shop/index.html'));
+  rmSync(join(dist, 'ar/shop.html'));
   mkdirSync(join(dist, 'admin'), {recursive:true});
   writeFileSync(join(dist, 'admin/index.html'), base);
   const issues = auditBuiltHtml(dist).problems.join('\n');

@@ -26,7 +26,11 @@ export function proofHealthPipeline(now) {
 export function mediaHealthPipeline(now) {
   return [{ $facet: {
     expiredIntents: [{ $match: { state: 'pending', createdAt: { $lte: new Date(+now - 15 * 60000) } } }, { $count: 'count' }],
-    unattachedVerified: [{ $match: { state: 'verified' } }, { $lookup: { from: 'products', localField: 'key', foreignField: 'imageKeys', pipeline: [{ $project: { _id: 1 } }, { $limit: 1 }], as: 'product' } }, { $match: { 'product.0': { $exists: false } } }, { $count: 'count' }],
+    unattachedVerified: [{ $match: { state: 'verified' } },
+      { $lookup: { from: 'products', localField: 'key', foreignField: 'imageKeys', pipeline: [{ $project: { _id: 1 } }, { $limit: 1 }], as: 'product' } },
+      { $match: { 'product.0': { $exists: false } } },
+      { $lookup: { from: 'categories', localField: 'key', foreignField: 'imageKey', pipeline: [{ $project: { _id: 1 } }, { $limit: 1 }], as: 'category' } },
+      { $match: { 'category.0': { $exists: false } } }, { $count: 'count' }],
   } }];
 }
 export async function loadOperations({ models = { OrderMail, PaymentProof, MediaAsset }, env = process.env, now = new Date() } = {}) {

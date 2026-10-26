@@ -11,7 +11,11 @@ import { fixtureProduct, fixtureCategory, fixtureOrder, adminFixtureResponse } f
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const phase = process.argv[2] || 'after';
 if (!['before', 'after'].includes(phase)) throw new Error('Use before or after.');
-const build = path.join(root, phase === 'before' ? '.playwright/d1-baseline-dist' : 'client/dist');
+const prefix = process.env.QC_BENCHMARK_PREFIX || 'd1';
+if (!/^d[12]$/.test(prefix)) throw new Error('Invalid benchmark prefix.');
+const profiling = process.env.QC_PROFILE === 'true';
+const liveFonts = prefix === 'd2' && process.env.QC_FONTS === 'live';
+const build = path.join(root, phase === 'before' ? `.playwright/${prefix}-baseline-dist` : 'client/dist');
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
 const mime = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml', '.webp': 'image/webp' };
@@ -36,13 +40,16 @@ if (selected?.some(name => !cases.some(row => row[0] === name))) throw new Error
 try {
   for (const mobile of [false, true]) for (const [name, route, role] of cases.filter(row => !selected || selected.includes(row[0]))) for (let repeat = 0; repeat < (['home','shop','product','overview'].includes(name) ? 3 : 1); repeat++) {
     const context = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 }, reducedMotion: 'no-preference' });
-    const page = await context.newPage(), apiCalls = [], errors = [];
+    const page = await context.newPage(), apiCalls = [], errors = [], fontResponses = [];
+    page.on('response', response => { if (/^https:\/\/fonts\.(googleapis|gstatic)\.com\//.test(response.url())) fontResponses.push({ url: response.url(), status: response.status(), type: response.headers()['content-type'] }); });
+    page.on('requestfailed', request => { if (/^https:\/\/fonts\.(googleapis|gstatic)\.com\//.test(request.url())) fontResponses.push({ url: request.url(), failed: request.failure()?.errorText }); });
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
-      window.__lab = { lcp: 0, shifts: [], longTasks: [], events: [] };
+      window.__lab = { lcp: 0, shifts: [], longTasks: [], frames: [], events: [] };
       for (const [type, callback] of [
         ['largest-contentful-paint', entries => entries.forEach(e => { window.__lab.lcp = e.startTime; window.__lab.lcpElement = e.element?.tagName; })],
-        ['layout-shift', entries => entries.filter(e => !e.hadRecentInput).forEach(e => window.__lab.shifts.push({ at: e.startTime, value: e.value }))],
+        ['layout-shift', entries => entries.filter(e => !e.hadRecentInput).forEach(e => window.__lab.shifts.push({ at: e.startTime, value: e.value, sources: e.sources?.map(s => ({ node: s.node?.tagName + '.' + s.node?.className, before: s.previousRect.toJSON(), after: s.currentRect.toJSON() })) }))],
+        ['long-animation-frame', entries => entries.forEach(e => window.__lab.frames.push({ at: e.startTime, duration: e.duration, blocking: e.blockingDuration, scripts: e.scripts?.map(s => ({ url: s.sourceURL, name: s.sourceFunctionName, duration: s.duration, forcedLayout: s.forcedStyleAndLayoutDuration })) }))],
         ['longtask', entries => entries.forEach(e => window.__lab.longTasks.push(e.duration))],
         ['event', entries => entries.forEach(e => window.__lab.events.push(e.duration))],
       ]) try { new PerformanceObserver(list => callback(list.getEntries())).observe({ type, buffered: true, ...(type === 'event' ? { durationThreshold: 16 } : {}) }); } catch { /* Unsupported metric is absent. */ }
@@ -64,6 +71,7 @@ try {
         else json = {};
         return intercepted.fulfill({ json });
       }
+      if (liveFonts && ['fonts.googleapis.com','fonts.gstatic.com'].includes(u.hostname)) return intercepted.continue();
       if (u.origin !== origin) return intercepted.abort();
       return intercepted.continue();
     });
@@ -71,6 +79,7 @@ try {
     await cdp.send('Network.enable'); await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
     await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: mobile ? 150 : 20, downloadThroughput: (mobile ? 1.6 : 10) * 1000000 / 8, uploadThroughput: 750000 / 8 });
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: mobile ? 4 : 1 });
+    if (profiling) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.start'); await cdp.send('Performance.enable'); }
     await page.goto(origin + route, { waitUntil: 'load' });
     await page.waitForSelector('main'); await page.waitForTimeout(3000);
     const initial = await page.evaluate(() => {
@@ -79,9 +88,18 @@ try {
       const resources = performance.getEntriesByType('resource').filter(row => /\.js(?:\?|$)/.test(row.name));
       return { ...window.__lab, cls: max, fcp: performance.getEntriesByName('first-contentful-paint')[0]?.startTime,
         jsEncoded: resources.reduce((n, r) => n + r.encodedBodySize, 0), jsDecoded: resources.reduce((n, r) => n + r.decodedBodySize, 0), jsFiles: resources.map(r => new URL(r.name).pathname),
+        fonts: performance.getEntriesByType('resource').filter(r => /fonts\.(googleapis|gstatic)\.com/.test(r.name)).map(r => ({url:r.name,transfer:r.transferSize,encoded:r.encodedBodySize,decoded:r.decodedBodySize,duration:r.duration})), fontStatus: document.fonts.status,
+        fontFaces: [...document.fonts].map(f => ({family:f.family,status:f.status})), bodyFont: getComputedStyle(document.body).fontFamily,
         hero: document.querySelector('.hero-media-image')?.currentSrc?.split('/').at(-1), overflow: document.documentElement.scrollWidth > innerWidth };
     });
     const initialCalls = [...apiCalls];
+    let profile, execution;
+    if (profiling) {
+      const { profile: cpu } = await cdp.send('Profiler.stop');
+      const counts = new Map(); for (const id of cpu.samples || []) counts.set(id, (counts.get(id) || 0) + 1);
+      profile = cpu.nodes.filter(n => counts.has(n.id)).map(n => ({ ...n.callFrame, samples: counts.get(n.id) })).sort((a,b) => b.samples - a.samples).slice(0,80);
+      execution = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.filter(m => ['ScriptDuration','TaskDuration','LayoutDuration','RecalcStyleDuration','JSHeapUsedSize'].includes(m.name)).map(m => [m.name,m.value]));
+    }
     const start = performance.now(); await page.locator('.qc-floating-language').click(); await page.waitForFunction(() => document.documentElement.lang === 'ar');
     const languageInteractionMs = performance.now() - start;
     await page.waitForTimeout(200);
@@ -97,10 +115,10 @@ try {
       await page.waitForTimeout(350); await go('home'); await page.waitForTimeout(350); await go('shop'); await page.waitForTimeout(350);
       journey = { transitionMs, apiCalls: [...apiCalls] };
     }
-    results.push({ device: mobile ? 'mobile' : 'desktop', name, route, repeat, ...initial, apiCalls: initialCalls, languageInteractionMs, maxEventMs, journey, errors });
+    results.push({ device: mobile ? 'mobile' : 'desktop', name, route, repeat, ...initial, fontResponses, profile, execution, apiCalls: initialCalls, languageInteractionMs, maxEventMs, journey, errors });
     console.log(`${phase} ${mobile ? 'mobile' : 'desktop'} ${name} #${repeat + 1}: JS ${initial.jsEncoded}B gzip / ${initial.jsDecoded}B decoded, LCP ${Math.round(initial.lcp)}ms, CLS ${initial.cls.toFixed(4)}, API ${initialCalls.length}`);
     await context.close();
   }
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 const assets = fs.readdirSync(path.join(build, 'assets')).filter(file => file.endsWith('.js')).map(file => { const buffer = fs.readFileSync(path.join(build, 'assets', file)); return { file, bytes: buffer.length, gzip: gzipSync(buffer).length }; });
-fs.writeFileSync(path.join(root, `.playwright/d1-${phase}${selected ? '-' + selected.join('-') : ''}.json`), JSON.stringify({ phase, settings: { gzip: true, coldCache: true, apiFixtureDelayMs: 100, desktop: { viewport: '1440x900', cpu: 1, mbps: 10, latencyMs: 20 }, mobile: { viewport: '390x844', cpu: 4, mbps: 1.6, latencyMs: 150 }, primaryRepeats: 3, others: 1, settleMs: 3000 }, assets, results }, null, 2));
+fs.writeFileSync(path.join(root, `.playwright/${prefix}-${phase}${selected ? '-' + selected.join('-') : ''}${liveFonts ? '-fonts' : ''}.json`), JSON.stringify({ phase, settings: { gzip: true, coldCache: true, profiling, externalResources: liveFonts ? 'Google Fonts only' : 'blocked', apiFixtureDelayMs: 100, desktop: { viewport: '1440x900', cpu: 1, mbps: 10, latencyMs: 20 }, mobile: { viewport: '390x844', cpu: 4, mbps: 1.6, latencyMs: 150 }, primaryRepeats: 3, others: 1, settleMs: 3000 }, assets, results }, null, 2));

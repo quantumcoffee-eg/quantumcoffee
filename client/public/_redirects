@@ -1,1 +1,3 @@
-/* /index.html 200
+# Cloudflare Pages serves existing route HTML/assets first, then uses its native
+# SPA fallback when there is no top-level 404.html. Do not add a catch-all 200
+# rewrite here: it masks the generated bilingual route heads and special files.

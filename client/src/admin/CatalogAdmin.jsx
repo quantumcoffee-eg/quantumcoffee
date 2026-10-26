@@ -9,6 +9,7 @@ const MediaEditor = lazy(() => import('./MediaEditor.jsx'));
 const AdminOrders = lazy(() => import('./AdminOrders.jsx'));
 const AdminOverview = lazy(() => import('./AdminOverview.jsx'));
 const StoreSettingsAdmin = lazy(() => import('./StoreSettingsAdmin.jsx'));
+import { preloadAdminTab } from '../lib/route-modules.js';
 import { PREPARATIONS } from '../lib/grinds.js';
 
 const blankCategory = () => ({ name:{en:'',ar:''}, slug:'', description:{en:'',ar:''},sortOrder:0,active:false });
@@ -109,7 +110,7 @@ export default function CatalogAdmin() {
     return () => controller.abort();
   }, [tab, productId, editProduct]);
   const editSize = (index,change) => setProdDraft(p=>({...p,sizes:p.sizes.map((s,i)=>i===index?{...s,...change}:s)}));
-  const switchTab = t => <button key={t} type="button" aria-current={tab===t?'page':undefined} className={tab===t?'selected':''} onClick={()=>showTab(t)}>{ar?({overview:'نظرة عامة',orders:'الطلبات',products:'المنتجات',categories:'الفئات',settings:'الإعدادات'}[t]):t[0].toUpperCase()+t.slice(1)}</button>;
+  const switchTab = t => <button key={t} type="button" aria-current={tab===t?'page':undefined} className={tab===t?'selected':''} onPointerEnter={()=>preloadAdminTab(t,session.role)} onFocus={()=>preloadAdminTab(t,session.role)} onClick={()=>showTab(t)}>{ar?({overview:'نظرة عامة',orders:'الطلبات',products:'المنتجات',categories:'الفئات',settings:'الإعدادات'}[t]):t[0].toUpperCase()+t.slice(1)}</button>;
   return <main className="qc-admin">
     <div className="qc-admin-head"><div><p className="kicker">QUANTUM COFFEE / ADMIN</p><h1>{ar?'لوحة الإدارة':'Store Administration'}</h1><p>{session.user?.email}</p></div><button className="qc-admin-secondary" type="button" onClick={async()=>{try{await session.logout();window.location.assign(url('/login'))}catch(e){setError(e.message)}}}>{ar?'خروج':'Sign out'}</button></div>
     <nav className="qc-admin-tabs" aria-label={ar?'أقسام الإدارة':'Admin sections'}>{['overview','orders','products','categories','settings'].map(switchTab)}</nav>

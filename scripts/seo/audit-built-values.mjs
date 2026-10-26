@@ -30,16 +30,19 @@ export function auditBuiltHtml(distDir, origin = '') {
   if (origin && !normalizeOrigin(origin)) problems.push('Invalid VITE_PUBLIC_SITE_ORIGIN; it must be an approved HTTPS origin without a trailing slash.');
   const files = builtFiles(distDir);
   const fileSet = new Set(files);
+  if (!fileSet.has('robots.txt') || !/^User-agent:\s*\*$/m.test(readFileSync(join(distDir,'robots.txt'),'utf8')) || /^Sitemap:/im.test(readFileSync(join(distDir,'robots.txt'),'utf8'))) {
+    problems.push('Built robots.txt must be a real crawler-policy text file without an unapproved sitemap.');
+  }
   const expected = new Set(STATIC_ROUTES.map(outputPathForRoute));
-  const htmlPages = files.filter(name => name === 'index.html' || name.endsWith('/index.html'));
+  const htmlPages = files.filter(name => name.endsWith('.html'));
   for (const found of htmlPages) {
     if (!expected.has(found)) problems.push(`Unexpected HTML snapshot: ${found}. Do not prebuild private or draft-product pages.`);
   }
   if (!fileSet.has('_headers') || !/X-Robots-Tag:\s*noindex\s*,\s*nofollow/i.test(readFileSync(join(distDir, '_headers'), 'utf8'))) {
     problems.push('Built Cloudflare _headers file must retain X-Robots-Tag: noindex, nofollow.');
   }
-  if (!fileSet.has('_redirects') || !/^\/\*\s+\/index\.html\s+200\s*$/m.test(readFileSync(join(distDir, '_redirects'), 'utf8'))) {
-    problems.push('Built Cloudflare _redirects must contain the SPA fallback.');
+  if (!fileSet.has('_redirects') || readFileSync(join(distDir, '_redirects'), 'utf8').split(/\r?\n/).some(line => line.trim() && !line.trim().startsWith('#')) || fileSet.has('404.html')) {
+    problems.push('Built Cloudflare native SPA fallback requires no top-level 404.html and no rewrites masking static route heads.');
   }
   const secrets = files.filter(name => /(^|\/)\.env(?:\.|$)/.test(name) && !name.endsWith('.env.example'));
   if (secrets.length) problems.push(`Private environment file(s) in build output: ${secrets.join(', ')}`);

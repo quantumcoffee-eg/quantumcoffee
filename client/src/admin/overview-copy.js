@@ -46,7 +46,14 @@ const labels = {
   received: ['Received', 'مستلم'], confirmed: ['Confirmed', 'مؤكد'], packing: ['Packing', 'قيد التجهيز'], shipped: ['Shipped', 'تم الشحن'], delivered: ['Delivered', 'تم التسليم'], cancelled: ['Cancelled', 'ملغى'],
 };
 export const overviewText = (lang, key) => labels[key]?.[lang === 'ar' ? 1 : 0] || key;
-export const overviewMoney = (value, lang) => new Intl.NumberFormat(lang === 'ar' ? 'ar-EG' : 'en-EG', { style: 'currency', currency: 'EGP' }).format(value / 100);
-export const overviewDate = (value, lang, time = false) => new Intl.DateTimeFormat(lang === 'ar' ? 'ar-EG' : 'en-GB', {
+const currencies = {}, dates = {};
+export const overviewMoney = (value, lang) => {
+  const locale = lang === 'ar' ? 'ar-EG' : 'en-EG';
+  return (currencies[locale] ||= new Intl.NumberFormat(locale, { style: 'currency', currency: 'EGP' })).format(value / 100);
+};
+export const overviewDate = (value, lang, time = false) => {
+  const locale = lang === 'ar' ? 'ar-EG' : 'en-GB', key = `${locale}:${Boolean(time)}`;
+  return (dates[key] ||= new Intl.DateTimeFormat(locale, {
   timeZone: 'Africa/Cairo', day: 'numeric', month: 'short', ...(time ? { hour: '2-digit', minute: '2-digit' } : {}),
-}).format(new Date(value.length === 10 ? `${value}T12:00:00Z` : value));
+})).format(new Date(value.length === 10 ? `${value}T12:00:00Z` : value));
+};

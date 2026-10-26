@@ -14,7 +14,9 @@ export const loadStoreSettings = async () => await StoreSettings.findById(key).l
 
 publicStoreRoutes.use(db);
 publicStoreRoutes.get('/settings',run(async(_req,res)=>{
-  res.set('Cache-Control','public, max-age=30');
+  // This endpoint includes payment/shipping configuration, beyond the narrow
+  // contact/policy projection cached by the storefront for 30 seconds.
+  res.set('Cache-Control','no-store');
   res.json({ settings:publicStoreSettings(await loadStoreSettings()) });
 }));
 adminStoreRoutes.use(db,loadUser,requireRole('admin'));

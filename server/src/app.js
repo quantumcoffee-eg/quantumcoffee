@@ -17,6 +17,9 @@ export function createApp() {
   app.disable('x-powered-by');
   if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
   const origins = new Set((process.env.CLIENT_ORIGIN || 'http://127.0.0.1:5173,http://localhost:5173').split(',').map(x => x.trim()).filter(Boolean));
+  // Default-deny response caching, including parser errors and unauthorized
+  // admin/media responses. Catalog prices and payment settings must stay fresh.
+  app.use('/api', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   app.use(helmet());
   app.use(cors({ origin(origin, callback) { callback(null, !origin || origins.has(origin)); }, credentials: true }));
   // Bilingual legal policies can exceed ordinary checkout payload sizes.

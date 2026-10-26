@@ -7,8 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { adminFixtureResponse, fixtureCategory, fixtureProduct } from '../tests/browser/overview-fixtures.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const phase = process.argv[2] || 'after';
+const prefix = process.env.QC_BENCHMARK_PREFIX || 'd1';
+if (!/^d[12]$/.test(prefix)) throw new Error('Invalid audit prefix.');
 if (!['before','after'].includes(phase)) throw new Error('Invalid phase.');
-const build = path.join(root, phase === 'before' ? '.playwright/d1-baseline-dist' : 'client/dist');
+const build = path.join(root, phase === 'before' ? `.playwright/${prefix}-baseline-dist` : 'client/dist');
 const server = http.createServer((req, res) => {
   let file = path.resolve(build, '.' + new URL(req.url, 'http://localhost').pathname);
   if (!file.startsWith(build + path.sep)) file = path.join(build, 'index.html');
@@ -43,7 +45,7 @@ try {
     await page.goto(origin + route);
     const ready = route.includes('settings') ? '.qc-admin-form' : route.includes('tab=products') ? '.qc-admin-list-item' : route === '/admin' ? '.qc-overview-metric' : route.startsWith('/products/') ? '.qc-product-summary' : route === '/shop' ? '.qc-product-card' : route === '/login' ? 'input[type=password]' : '.qc-category-card';
     await page.waitForSelector(ready); await page.waitForTimeout(500);
-    if (phase === 'after' && ((width === 390 && route === '/') || (width === 1440 && route === '/admin') || (width === 390 && route.includes('settings')))) await page.screenshot({ path: path.join(root, `.playwright/d1-${width}-${route === '/' ? 'home' : route === '/admin' ? 'overview' : 'arabic-settings'}.png`) });
+    if (phase === 'after' && ((width === 390 && route === '/') || (width === 1440 && route === '/admin') || (width === 390 && route.includes('settings')))) await page.screenshot({ path: path.join(root, `.playwright/${prefix}-${width}-${route === '/' ? 'home' : route === '/admin' ? 'overview' : 'arabic-settings'}.png`) });
     const cdp = await page.context().newCDPSession(page), ax = await cdp.send('Accessibility.getFullAXTree');
     const unnamed = ax.nodes.filter(n => !n.ignored && ['button','textbox','combobox','checkbox','spinbutton','link'].includes(n.role?.value) && !n.name?.value).map(n => n.role.value);
     const data = await page.evaluate(() => {
@@ -68,7 +70,7 @@ try {
     rows.push({width,route,unnamed,...data,searchFocus}); await page.close();
   }
 } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); }
-fs.writeFileSync(path.join(root,`.playwright/d1-a11y-${phase}.json`),JSON.stringify(rows,null,2));
+fs.writeFileSync(path.join(root,`.playwright/${prefix}-a11y-${phase}.json`),JSON.stringify(rows,null,2));
 console.log(JSON.stringify(rows.map(({width,route,unnamed,overflow,skipLink,smallControls,contrast,searchFocus})=>({width,route,unnamed,overflow,skipLink,small:smallControls.length,contrast:contrast.slice(0,4),searchFocus})),null,2));
 if (phase === 'after') {
   const failures = rows.filter(row => row.overflow || row.unnamed.length || !row.skipLink || row.imagesWithoutDimensions.length || row.contrast.length || (row.searchFocus && row.searchFocus.containerOutline !== 'solid'));

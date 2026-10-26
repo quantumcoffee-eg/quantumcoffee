@@ -50,6 +50,9 @@ export function renderStaticHead(baseHtml, route, siteOrigin = '') {
 export function outputPathForRoute(route) {
   if (!STATIC_ROUTES.includes(route)) throw new Error(`Unapproved static route: ${route}`);
   if (route === '/') return 'index.html';
+  if (route === '/ar/') return 'ar/index.html';
   const segment = route.replace(/^\/|\/$/g, '');
-  return `${segment}/index.html`;
+  // Pages maps /about.html to /about; directory index.html maps to /about/.
+  // Match the existing extensionless canonical/client URLs without a slash hop.
+  return `${segment}.html`;
 }

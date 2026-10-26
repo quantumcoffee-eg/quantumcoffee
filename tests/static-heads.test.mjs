@@ -21,7 +21,7 @@ test('Arabic HTML has Arabic head, rtl direction and path', () => {
   const html = renderStaticHead(source, '/ar/shop');
   assert.match(html, /<html lang="ar" dir="rtl">/);
   assert.match(html, /تسوق القهوة/);
-  assert.equal(outputPathForRoute('/ar/shop'), 'ar/shop/index.html');
+  assert.equal(outputPathForRoute('/ar/shop'), 'ar/shop.html');
   assert.equal(outputPathForRoute('/ar/'), 'ar/index.html');
 });
 

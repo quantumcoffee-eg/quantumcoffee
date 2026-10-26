@@ -10,15 +10,16 @@ export default function Hero() {
   const copyRef = useRef(null);
 
   useEffect(() => {
-    if (!heroRef.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!heroRef.current) return;
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     let cancelled = false;
-    let context;
-    const install = async () => {
+    let context, started = false, generation = 0;
+    const install = async ticket => {
       const [{ gsap }, { ScrollTrigger }] = await Promise.all([
         import('gsap'),
         import('gsap/ScrollTrigger'),
       ]);
-      if (cancelled || !heroRef.current) return;
+      if (cancelled || preference.matches || ticket !== generation || !heroRef.current) return;
       gsap.registerPlugin(ScrollTrigger);
       context = gsap.context(() => {
         gsap.fromTo(mediaRef.current,
@@ -31,8 +32,19 @@ export default function Hero() {
         });
       }, heroRef);
     };
-    install().catch((error) => { if (import.meta.env.DEV) console.warn('Hero scroll animation unavailable:', error); });
-    return () => { cancelled = true; context?.revert(); };
+    // A stationary hero needs no scroll engine. Keep the approved tweens, but
+    // request their modules only after genuine scroll/scroll-key intent.
+    const detach = () => { for (const event of ['wheel','touchmove','scroll','keydown']) window.removeEventListener(event, intent); };
+    const attach = () => { if (!preference.matches) for (const event of ['wheel','touchmove','scroll','keydown']) window.addEventListener(event, intent, { passive:true }); };
+    const intent = event => {
+      if (started || preference.matches) return;
+      if (event.type === 'keydown' && (!['ArrowDown','ArrowUp','PageDown','PageUp',' ','Home','End'].includes(event.key) || event.target.closest?.('input,textarea,select,[contenteditable=true]'))) return;
+      started = true; detach(); const ticket = ++generation;
+      void install(ticket).catch(error => { if (import.meta.env.DEV) console.warn('Hero scroll animation unavailable:', error); });
+    };
+    const motionChanged = () => { generation++; context?.revert(); context = undefined; started = false; detach(); attach(); };
+    attach(); preference.addEventListener('change', motionChanged);
+    return () => { cancelled = true; generation++; detach(); preference.removeEventListener('change', motionChanged); context?.revert(); };
   }, []);
 
   return (

@@ -3,7 +3,8 @@ import { Coffee, ArrowUpRight } from 'lucide-react';
 import { useLocale } from '../lib/i18n.jsx';
 import './catalog-public.css';
 import SafeImage from './SafeImage.jsx';
-export const money = value => new Intl.NumberFormat('en-EG',{style:'currency',currency:'EGP',maximumFractionDigits:2}).format((value || 0)/100);
+let moneyFormatter;
+export const money = value => (moneyFormatter ||= new Intl.NumberFormat('en-EG',{style:'currency',currency:'EGP',maximumFractionDigits:2})).format((value || 0)/100);
 export const translated = (value,lang) => value?.[lang] || value?.en || '';
 export function ProductCard({product}) {
   const {lang,url}=useLocale();
