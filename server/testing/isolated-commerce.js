@@ -5,6 +5,8 @@ import Product from '../src/models/Product.js';
 import Category from '../src/models/Category.js';
 import PaymentProof from '../src/models/PaymentProof.js';
 import OrderMail from '../src/models/OrderMail.js';
+import PaymentEvent from '../src/models/PaymentEvent.js';
+import RefundCase from '../src/models/RefundCase.js';
 
 export function assertIsolatedReplicaUri(uri) {
   const match = typeof uri === 'string' && /^mongodb:\/\/127\.0\.0\.1:(\d{1,5})\/\?replicaSet=qc-c1-rs$/.exec(uri);
@@ -20,11 +22,13 @@ export async function isolatedCommerceDatabase(uri) {
   const assertOwned = () => {
     if (connection.name !== name || !/^qc_c1_test_[a-f0-9]{32}$/.test(name) || connection.host !== '127.0.0.1') throw new Error('Refusing non-test database operation.');
   };
-  const models = Object.fromEntries([Order, Product, Category, PaymentProof, OrderMail].map(model => [model.modelName, connection.model(model.modelName, model.schema)]));
+  const models = Object.fromEntries([Order, Product, Category, PaymentProof, OrderMail, PaymentEvent, RefundCase].map(model => [model.modelName, connection.model(model.modelName, model.schema)]));
   assertOwned();
   for (const model of Object.values(models)) { await model.createCollection(); await model.createIndexes(); }
   return { connection, models,
-    async reset() { assertOwned(); for (const model of Object.values(models)) await model.deleteMany({}); },
+    // Raw deletion is intentionally confined to this owned disposable database;
+    // the production event model forbids updates and deletion.
+    async reset() { assertOwned(); for (const model of Object.values(models)) await model.collection.deleteMany({}); },
     async close() { assertOwned(); try { await connection.dropDatabase(); } finally { await connection.close(); } },
     async failCommand(data, mode = { times: 1 }) { assertOwned(); return connection.db.admin().command({ configureFailPoint: 'failCommand', mode, data: { ...data, appName: 'qc-c1-transactions' } }); },
   };

@@ -1,49 +1,10 @@
-import { LOW_STOCK_THRESHOLD, REPORTING_TIMEZONE, ORDER_QUEUE_FILTERS } from './overview-values.js';
-
-const inPeriod = (field, { from, to }) => ({ [field]: { $gte: from, $lt: to } });
-// Reduce across ALL history before the period match. A repeated approval in a
-// later period must never count the order again. Invalid/missing dates fail closed.
-const firstEvent = state => ({ $reduce: {
-  input: { $ifNull: ['$paymentHistory', []] }, initialValue: null,
-  in: { $cond: [
-    { $and: [{ $eq: ['$$this.state', state] }, { $eq: [{ $type: '$$this.at' }, 'date'] },
-      { $or: [{ $eq: ['$$value', null] }, { $lt: ['$$this.at', '$$value'] }] }] },
-    '$$this.at', '$$value',
-  ] },
-} });
-
-export function financialPipeline(period) {
-  return [
-    { $match: { $or: [{ 'paymentHistory.state': 'paid' }, { paymentState: { $in: ['paid', 'refunded'] } }, { 'paymentHistory.state': 'refunded' }] } },
-    { $project: { totalPiastres: 1, paymentState: 1, fulfillmentState: 1, lines: 1,
-      collectedAt: firstEvent('paid'), refundedAt: firstEvent('refunded') } },
-    { $facet: {
-      series: [
-        { $match: inPeriod('collectedAt', period) },
-        { $group: { _id: { $dateToString: { date: '$collectedAt', format: '%Y-%m-%d', timezone: REPORTING_TIMEZONE } }, collectedPiastres: { $sum: '$totalPiastres' }, paidOrders: { $sum: 1 } } },
-        { $sort: { _id: 1 } },
-      ],
-      bestSellers: [
-        { $match: { ...inPeriod('collectedAt', period), paymentState: 'paid', fulfillmentState: { $ne: 'cancelled' }, refundedAt: null } },
-        { $sort: { collectedAt: 1, _id: 1 } },
-        { $unwind: '$lines' },
-        { $group: { _id: '$lines.productId', name: { $last: '$lines.name' }, units: { $sum: '$lines.quantity' }, merchandisePiastres: { $sum: '$lines.lineTotalPiastres' } } },
-        { $sort: { units: -1, merchandisePiastres: -1, _id: 1 } }, { $limit: 5 },
-        { $project: { _id: 0, productId: { $toString: '$_id' }, name: 1, units: 1, merchandisePiastres: 1 } },
-      ],
-      diagnostics: [{ $group: { _id: null,
-        missingCollectionEvents: { $sum: { $cond: [{ $and: [{ $in: ['$paymentState', ['paid', 'refunded']] }, { $eq: ['$collectedAt', null] }] }, 1, 0] } },
-        currentRefundedOrders: { $sum: { $cond: [{ $eq: ['$paymentState', 'refunded'] }, 1, 0] } },
-        recordedRefundOrdersInPeriod: { $sum: { $cond: [{ $and: [{ $ne: ['$refundedAt', null] }, { $gte: ['$refundedAt', period.from] }, { $lt: ['$refundedAt', period.to] }] }, 1, 0] } },
-      } }],
-    } },
-  ];
-}
+import { LOW_STOCK_THRESHOLD, ORDER_QUEUE_FILTERS } from './overview-values.js';
 
 const countWhen = condition => ({ $sum: { $cond: [condition, 1, 0] } });
 export function operationsPipeline(period) {
   return [{ $group: { _id: null,
     totalOrders: countWhen({ $and: [{ $gte: ['$createdAt', period.from] }, { $lt: ['$createdAt', period.to] }] }),
+    currentRefundedOrders: countWhen({ $eq: ['$paymentState', 'refunded'] }),
     awaitingFulfillment: countWhen({ $in: ['$fulfillmentState', ['received', 'confirmed', 'packing']] }),
     confirmation: countWhen({ $eq: ['$fulfillmentState', 'received'] }),
     packingShipping: countWhen({ $in: ['$fulfillmentState', ['confirmed', 'packing']] }),

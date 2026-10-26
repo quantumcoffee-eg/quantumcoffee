@@ -30,7 +30,7 @@ const orderSchema = new mongoose.Schema({
   fulfillmentState: { type:String, enum:['received','confirmed','packing','shipped','delivered','cancelled'], default:'received' },
   history: { type:[historySchema], default:[] },
   paymentProofId: { type: mongoose.Schema.Types.ObjectId, ref:'PaymentProof', default:null },
-  paymentHistory: { type:[new mongoose.Schema({state:{type:String,required:true},at:{type:Date,required:true},by:{type:mongoose.Schema.Types.ObjectId,default:null},reason:{type:String,default:''}},{_id:false})], default:[] },
+  paymentHistory: { type:[new mongoose.Schema({state:{type:String,required:true},at:{type:Date,required:true},by:{type:mongoose.Schema.Types.ObjectId,default:null},reason:{type:String,default:''},eventId:{type:mongoose.Schema.Types.ObjectId}},{_id:false})], default:[] },
   revision:{type:Number,default:0},
 }, {timestamps:true,strict:'throw'});
 orderSchema.index({userId:1,createdAt:-1});

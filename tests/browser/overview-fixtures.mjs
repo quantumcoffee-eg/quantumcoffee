@@ -10,6 +10,7 @@ export const fixtureOrder = { id: fixtureId, orderNumber: 'QC-ABCDEF123456', cre
   customer: { name: 'Browser test', phone: '01000000000', email: 'test@example.invalid', governorate: 'cairo', city: 'Test', street: 'Test' }, lines: [], history: [{ status: 'received', at: '2026-10-26T09:00:00Z' }], paymentHistory: [] };
 export function overviewFixture(range = '30d', populated = false) {
   return assembleOverview(reportingPeriod(range, new Date('2026-10-26T12:00:00Z')), {
+    reconciliation: { complete: true, issueCount: 0, issueCounts: {} },
     inventory: { counts: [{ totalProducts: populated ? 4 : 3, draftProducts: 3, publishedProducts: populated ? 1 : 0 }], ...(populated ? { lowStockTotal: [{ count: 1 }], lowStock: [{ productId: fixtureId, name: fixtureProduct.name, sizeGrams: 250, grindCode: 'espresso', stockQuantity: 3 }] } : {}) },
     categories: { totalCategories: 1, activeCategories: 1 },
     financial: populated ? { series: [{ _id: '2026-10-26', collectedPiastres: 20000, paidOrders: 1 }], bestSellers: [{ productId: fixtureId, name: fixtureProduct.name, units: 2, merchandisePiastres: 18000 }] } : {},
@@ -18,6 +19,7 @@ export function overviewFixture(range = '30d', populated = false) {
   });
 }
 export function adminFixtureResponse(_request, u) {
+  if (u.pathname === '/api/admin/overview/reconciliation') return { json: { reconciliation: { complete: true, issueCount: 0, issueCounts: {}, items: [], limit: 25, refundRecordingEnabled: false, adjustmentRecordingEnabled: false } } };
   if (u.pathname === '/api/admin/overview') return { json: { overview: overviewFixture(u.searchParams.get('range') || '30d', true) } };
   if (u.pathname === '/api/admin/store/settings') return { json: { settings: defaultStoreSettings(), revision: 0 } };
   if (u.pathname === '/api/admin/orders') return { json: { items: [fixtureOrder], pagination: { page: 1, pages: 1, total: 1 } } };

@@ -9,6 +9,17 @@ test('order mail is disabled by default and never guesses recipients',()=>{
   assert.deepEqual(notificationDocuments('placed',order,{ORDER_EMAILS_ENABLED:'false'}),[]);
   assert.deepEqual(notificationDocuments('placed',{...order,customer:{email:''}},{...env,ORDER_ALERT_EMAIL:''}),[]);
 });
+test('verified refund outbox links the monetary event and renders the actual partial amount without private evidence', () => {
+  const monetary = { eventId: '507f1f77bcf86cd799439099', amountPiastres: 1000 };
+  const notice = notificationDocuments('refund_recorded', { ...order, paymentState: 'paid' }, env, monetary)[0];
+  assert.equal(notice.monetaryEventId, monetary.eventId);
+  assert.equal(notice.monetaryAmountPiastres, 1000);
+  const content = orderMailContent({ ...notice, siteOrigin: env.PUBLIC_SITE_ORIGIN });
+  assert.match(content.text, /Verified refund: 10\.00 EGP/);
+  assert.doesNotMatch(content.text, /507f1f77|externalReference|evidence/);
+  assert.throws(() => notificationDocuments('refund_recorded', order, env));
+  assert.throws(() => orderMailContent({ ...notice, monetaryAmountPiastres: order.totalPiastres + 1, siteOrigin: env.PUBLIC_SITE_ORIGIN }));
+});
 test('new orders generate distinct customer/admin notices with stable dedupe keys',()=>{
   const notices=notificationDocuments('placed',order,env);
   assert.equal(notices.length,2);

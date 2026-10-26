@@ -22,15 +22,15 @@ test('Cairo reporting dates respect both daylight-saving transitions and UTC day
   assert.equal(reportingPeriod('today', now).to.getTime(), now.getTime());
 });
 test('zero orders and three draft products/one category produce honest zero-state metrics', () => {
-  const overview = assembleOverview(reportingPeriod('7d', now), { inventory: { counts: [{ totalProducts: 3, draftProducts: 3, publishedProducts: 0 }] }, categories: { totalCategories: 1, activeCategories: 1 } });
+  const overview = assembleOverview(reportingPeriod('7d', now), { reconciliation: { complete: true, issueCount: 0 }, inventory: { counts: [{ totalProducts: 3, draftProducts: 3, publishedProducts: 0 }] }, categories: { totalCategories: 1, activeCategories: 1 } });
   assert.equal(overview.metrics.totalProducts, 3);
   assert.equal(overview.metrics.totalCategories, 1);
   assert.equal(overview.metrics.draftProducts, 3);
   assert.equal(overview.metrics.totalOrders, 0);
   assert.equal(overview.financial.collectedPiastres, 0);
   assert.equal(overview.financial.averageOrderValuePiastres, 0);
-  assert.equal(overview.financial.refundAmountsPiastres, null);
-  assert.equal(overview.financial.netCollectedPiastres, null);
+  assert.equal(overview.financial.refundAmountsPiastres, 0);
+  assert.equal(overview.financial.netCollectedPiastres, 0);
   assert.equal(overview.series.length, 7);
   assert.ok(overview.series.every(point => point.collectedPiastres === 0));
 });
@@ -56,8 +56,8 @@ test('service performs a fixed number of bounded read-only queries with time lim
   const calls = [];
   const fake = { aggregate(pipeline) { calls.push(pipeline); return { option(options) { assert.equal(options.maxTimeMS, 5000); return Promise.resolve([]); } }; } };
   const Order = { ...fake, find(filter) { assert.deepEqual(filter, {}); return { sort(value) { assert.deepEqual(value, { createdAt: -1, _id: -1 }); return this; }, limit(n) { assert.equal(n, 8); return this; }, select(value) { assert.ok(!value.includes('customer')); return this; }, maxTimeMS(n) { assert.equal(n, 5000); return this; }, lean() { return Promise.resolve([]); } }; } };
-  const result = await loadOverview('today', { now, models: { Order, Product: fake, Category: fake, PaymentProof: fake } });
-  assert.equal(calls.length, 5);
+  const result = await loadOverview('today', { now, models: { Order, Product: fake, Category: fake, PaymentProof: fake, PaymentEvent: fake, RefundCase: fake } });
+  assert.equal(calls.length, 10);
   assert.equal(result.metrics.totalOrders, 0);
   assert.ok(!JSON.stringify(calls).match(/\$out|\$merge/));
 });

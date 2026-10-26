@@ -4,6 +4,7 @@ import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { overviewFixture, adminFixtureResponse, fixtureId } from './overview-fixtures.mjs';
+import { overviewText, overviewMoney } from '../../client/src/admin/overview-copy.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
@@ -14,6 +15,54 @@ const browser = await chromium.launch({
   ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}),
 });
 after(() => browser.close());
+
+for (const lang of ['en', 'ar']) for (const width of [320, 1440]) test(`ledger accounting and read-only reconciliation: ${lang}, ${width}px`, async t => {
+  let reportMode = 'ready', reportCalls = 0;
+  const p = await pageFor(t, { lang, width, role: 'admin', path: '/admin', apiHandler: (request, u) => {
+    if (u.pathname === '/api/admin/overview') {
+      const overview = overviewFixture(u.searchParams.get('range') || '30d', true);
+      overview.financial.accountingComplete = false; overview.financial.netCollectedPiastres = null;
+      overview.financial.issueCount = 1; overview.financial.missingCollectionEvents = 1;
+      return { json: { overview } };
+    }
+    if (u.pathname === '/api/admin/overview/reconciliation') {
+      reportCalls++;
+      if (reportMode === 'error') return { status: 503, json: { error: 'Unavailable' } };
+      return { json: { reconciliation: { complete: reportMode === 'empty', issueCount: reportMode === 'empty' ? 0 : 1, items: reportMode === 'empty' ? [] : [{ orderId: fixtureId, orderNumber: 'QC-ABCDEF123456', issues: ['MISSING_COLLECTION'] }], limit: 25, refundRecordingEnabled: false } } };
+    }
+    return adminFixtureResponse(request, u);
+  } });
+  await p.getByText(overviewText(lang, 'incompleteAccounting'), { exact: true }).waitFor();
+  assert.equal(reportCalls, 0, 'report is loaded only on request');
+  assert.equal(await p.locator('.qc-overview-accounting dd').nth(1).textContent(), overviewText(lang, 'unavailable'));
+  const summary = p.locator('.qc-reconciliation summary'); await summary.focus(); await p.keyboard.press('Enter');
+  await p.locator('.qc-reconciliation a').waitFor();
+  assert.match(await p.locator('.qc-reconciliation').textContent(), new RegExp(overviewText(lang, 'MISSING_COLLECTION').replaceAll('.', '\\.')));
+  assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'no viewport overflow');
+  reportMode = 'error'; await p.getByRole('button', { name: overviewText(lang, 'refreshAccounting'), exact: true }).click();
+  await p.getByRole('alert').filter({ hasText: overviewText(lang, 'accountingError') }).waitFor();
+  reportMode = 'empty'; await p.getByRole('button', { name: overviewText(lang, 'refreshAccounting'), exact: true }).click();
+  await p.getByText(overviewText(lang, 'reconciled'), { exact: true }).waitFor();
+  assert.equal(await p.locator('.qc-reconciliation a').count(), 0);
+  reportMode = 'ready'; await p.getByRole('button', { name: overviewText(lang, 'refreshAccounting'), exact: true }).click();
+  await p.locator('.qc-reconciliation a').click();
+  await p.waitForURL(url => url.searchParams.get('order') === fixtureId && url.searchParams.get('tab') === 'orders');
+  await p.getByRole('heading', { name: 'QC-ABCDEF123456', exact: true }).waitFor();
+});
+
+test('complete ledger dashboard displays a negative net for refunds of earlier collections', async t => {
+  const p = await pageFor(t, { role: 'admin', path: '/admin', apiHandler: (request, u) => {
+    if (u.pathname === '/api/admin/overview') {
+      const overview = overviewFixture('30d');
+      overview.financial.refundAmountsPiastres = 12000; overview.financial.netCollectedPiastres = -12000; overview.financial.recordedRefundOrdersInPeriod = 1;
+      return { json: { overview } };
+    }
+    return adminFixtureResponse(request, u);
+  } });
+  await p.locator('.qc-overview-accounting').waitFor();
+  assert.equal(await p.locator('.qc-overview-accounting dd').nth(1).textContent(), overviewMoney(-12000, 'en'));
+  assert.equal(await p.getByText(overviewText('en', 'incompleteAccounting'), { exact: true }).count(), 0);
+});
 
 // Deliberately synthetic fixtures, never sent to a backend or stored in a DB.
 const category = { _id: '507f1f77bcf86cd799439012', slug: 'browser-fixture', name: { en: 'Browser fixture category', ar: 'فئة الاختبار' }, active: true };
@@ -559,7 +608,7 @@ test('overview has explicit loading, retry, error, zero-sales and denied-access 
   assert.equal(await p.getByText('No collected payments in this period', { exact: true }).count(), 1);
   assert.match(await p.locator('.qc-overview-metric').nth(2).textContent(), /3/);
   assert.match(await p.locator('.qc-overview-metric').nth(3).textContent(), /1/);
-  assert.match(await p.locator('.qc-overview-disclosure').textContent(), /unavailable/);
+  assert.match(await p.locator('.qc-overview-disclosure').textContent(), /Ledger amounts/);
   mode = 'denied'; await p.getByRole('button', { name: 'Refresh overview', exact: true }).click();
   await p.getByRole('alert').filter({ hasText: 'administrator session' }).waitFor();
   assert.equal(await p.locator('.qc-overview-metric').count(), 0);

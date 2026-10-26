@@ -8,9 +8,9 @@ const MAX_ATTEMPTS=5;
 const MAX_PER_TICK=5;
 const TWO_MINUTES=2*60*1000;
 const queueEnabled = (env=process.env) => env.ORDER_EMAILS_ENABLED==='true';
-export async function queueOrderMail(kind,order,session,{model=OrderMail,env=process.env}={}) {
+export async function queueOrderMail(kind,order,session,{model=OrderMail,env=process.env,monetary=null}={}) {
   if (!queueEnabled(env)) return;
-  const docs=notificationDocuments(kind,order,env);
+  const docs=notificationDocuments(kind,order,env,monetary);
   if (!docs.length) return;
   await model.bulkWrite(docs.map(item=>({updateOne:{filter:{dedupeKey:item.dedupeKey},update:{$setOnInsert:item},upsert:true}})), {ordered:true,...(session?{session}:{})});
 }

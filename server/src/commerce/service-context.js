@@ -4,18 +4,20 @@ import Product from '../models/Product.js';
 import Category from '../models/Category.js';
 import PaymentProof from '../models/PaymentProof.js';
 import OrderMail from '../models/OrderMail.js';
+import PaymentEvent from '../models/PaymentEvent.js';
+import RefundCase from '../models/RefundCase.js';
 import { queueOrderMail } from '../notifications/order-mail.js';
 import { commerceTransaction } from './transactions.js';
 import { CommerceError } from './checkout.js';
 
-export function commerceContext({ connection = mongoose.connection, models = { Order, Product, Category, PaymentProof, OrderMail }, env = process.env, clock = () => new Date() } = {}) {
+export function commerceContext({ connection = mongoose.connection, models = { Order, Product, Category, PaymentProof, OrderMail, PaymentEvent, RefundCase }, env = process.env, clock = () => new Date() } = {}) {
   return { connection, models, env, now: () => {
     const value = new Date(clock());
     if (!Number.isFinite(value.getTime())) throw new Error('Invalid commerce clock.');
     return value;
   }, transaction: callback => commerceTransaction(connection, callback),
   // Only a durable outbox write runs inside a transaction, never SMTP/R2.
-  notify: (kind, order, session) => queueOrderMail(kind, order, session, { model: models.OrderMail, env }) };
+  notify: (kind, order, session, monetary = null) => queueOrderMail(kind, order, session, { model: models.OrderMail, env, monetary }) };
 }
 export async function transactionOrder(OrderModel, id, session) {
   const order = await OrderModel.findById(id).session(session).lean();

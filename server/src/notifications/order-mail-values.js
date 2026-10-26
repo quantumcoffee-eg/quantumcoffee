@@ -16,13 +16,15 @@ export function notificationTargets(kind,order,env=process.env) {
   if (['placed','proof_submitted'].includes(kind) && isMailAddress(env.ORDER_ALERT_EMAIL)) targets.push({to:env.ORDER_ALERT_EMAIL.toLowerCase(),audience:'admin'});
   return targets;
 }
-export function notificationDocuments(kind,order,env=process.env) {
-  if (!['placed','fulfillment','proof_submitted','payment'].includes(kind)) throw new Error('Invalid order mail kind.');
+export function notificationDocuments(kind,order,env=process.env,monetary=null) {
+  if (!['placed','fulfillment','proof_submitted','payment','refund_recorded'].includes(kind)) throw new Error('Invalid order mail kind.');
+  if (kind === 'refund_recorded' && (!monetary?.eventId || !Number.isSafeInteger(monetary.amountPiastres) || monetary.amountPiastres <= 0)) throw new Error('A verified monetary event is required.');
   const targets=notificationTargets(kind,order,env);
   return targets.map(({to,audience})=>({
     dedupeKey:createHash('sha256').update(`${order._id}:${order.revision}:${kind}:${audience}:${to}`).digest('hex'),
     to,audience,kind,orderNumber:order.orderNumber,
     fulfillmentState:order.fulfillmentState,paymentState:order.paymentState,totalPiastres:order.totalPiastres,
+    ...(monetary ? { monetaryEventId:monetary.eventId, monetaryAmountPiastres:monetary.amountPiastres } : {}),
     state:'pending',nextAttemptAt:new Date(),
   }));
 }
