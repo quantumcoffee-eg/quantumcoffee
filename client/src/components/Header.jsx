@@ -72,7 +72,6 @@ export default function Header() {
         <div className="header-actions">
           <Link className="icon-button" title={role === 'admin' ? t('admin') : role === 'customer' ? t('account') : t('login')} aria-label={role === 'admin' ? t('admin') : role === 'customer' ? t('account') : t('login')} to={url(accountDestination)} onClick={navigate(accountDestination)}><UserRound size={20} strokeWidth={1.7} /></Link>
           <Link className="icon-button" to={url('/cart')} onClick={navigate('/cart')} aria-label={t('cart')} title={t('cart')}><ShoppingBag size={20} strokeWidth={1.7} />{count > 0 && <span className="qc-cart-count" aria-hidden="true">{count > 99 ? '99+' : count}</span>}</Link>
-          <Link className="lang-header" to={otherUrl()} onClick={navigate()} aria-label={lang === 'en' ? 'Switch to Arabic' : 'Switch to English'}><span>{lang === 'en' ? 'AR' : 'EN'}</span></Link>
         </div>
       </div>
     </header>

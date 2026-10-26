@@ -9,6 +9,7 @@ import { paymentRoutes, adminPaymentRoutes } from './routes/payment.routes.js';
 import { databaseReady } from './db/connect.js';
 import { publicStoreRoutes, adminStoreRoutes } from './routes/store.routes.js';
 import { loadUser, requireRole } from './security/session.js';
+import overviewRoutes from './routes/overview.routes.js';
 
 export function createApp() {
   const app = express();
@@ -48,6 +49,7 @@ export function createApp() {
   app.use('/api/commerce/payment-proofs', paymentRoutes);
   app.use('/api/admin/orders', adminOrdersRoutes);
   app.use('/api/admin/payments', adminPaymentRoutes);
+  app.use('/api/admin/overview', overviewRoutes);
   // This endpoint exercises the server-side admin guard without exposing data.
   app.get('/api/admin/check', (req, res, next) => databaseReady() ? next() : res.status(503).json({ error: 'Database unavailable.' }), loadUser, requireRole('admin'), (req, res) => res.json({ ok: true, role: 'admin' }));
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.', code: 'NOT_FOUND' }));

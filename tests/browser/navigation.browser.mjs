@@ -3,6 +3,7 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { overviewFixture, adminFixtureResponse, fixtureId } from './overview-fixtures.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
@@ -36,12 +37,13 @@ async function pageFor(t, { width = 1440, lang = 'en', path = '/about', role = '
   page.setDefaultNavigationTimeout(10000);
   page.on('pageerror', e => errors.push(e.message));
   t.after(() => assert.deepEqual(errors, [], 'No browser runtime errors'));
-  await context.route('**/*', route => {
+  await context.route('**/*', async route => {
     const u = new URL(route.request().url());
     if (u.pathname.includes('/api/')) {
-      const custom = apiHandler?.(route.request(), u);
+      const custom = await apiHandler?.(route.request(), u);
       if (custom) return route.fulfill(custom);
       const json = u.pathname.endsWith('/auth/me') ? { user: role === 'guest' ? null : { role, email: 'browser-test@example.invalid', name: 'Browser fixture' } }
+        : u.pathname === '/api/admin/overview' ? { overview: overviewFixture(u.searchParams.get('range') || '30d') }
         : u.pathname.endsWith('/store/settings') ? { settings: { contact: {} } }
           : u.pathname.endsWith('/commerce/config') ? { checkoutEnabled: false, paymentMethods: [] }
             : u.pathname.includes('categories') ? { categories: catalog ? [category] : [] }
@@ -243,7 +245,7 @@ for (const lang of ['en', 'ar']) {
     const other = lang === 'ar' ? 'en' : 'ar';
     for (const path of ['/shop?category=browser-fixture&sort=newest#filters', '/products/browser-fixture', '/admin?tab=products', '/#categories']) {
       await p.goto(`${origin}${local(lang, path)}`);
-      await p.locator('.lang-header').click();
+      await p.locator('.qc-floating-language').click();
       const expected = other === 'ar' && path.startsWith('/#') ? `/ar${path.slice(1)}` : local(other, path);
       await at(p, expected);
       await p.waitForFunction(dir => document.documentElement.dir === dir, other === 'ar' ? 'rtl' : 'ltr');
@@ -421,4 +423,152 @@ test('native Ctrl-click opens home in a new tab and keyboard focus stays visible
   const popup = await newTab;
   await popup.waitForURL(`${origin}/`);
   await at(p, '/about');
+});
+
+for (const lang of ['en', 'ar']) {
+  test(`${lang}: floating language toggle is fixed bottom-left, with a loaded flag, on public pages`, async t => {
+    const p = await pageFor(t, { lang });
+    const toggle = p.locator('.qc-floating-language');
+    for (const width of [320, 390, 768, 1440]) {
+      await p.setViewportSize({ width, height: 900 });
+      const geometry = await toggle.evaluate(e => {
+        const rect = e.getBoundingClientRect();
+        const flag = e.querySelector('img');
+        return { left: rect.left, bottom: innerHeight - rect.bottom, width: rect.width, height: rect.height,
+          position: getComputedStyle(e).position, direction: getComputedStyle(e).direction,
+          flagLoaded: flag.complete && flag.naturalWidth > 0,
+          hit: e.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)) };
+      });
+      assert.equal(geometry.position, 'fixed');
+      assert.equal(geometry.direction, 'ltr');
+      assert.equal(geometry.left, 16);
+      assert.equal(geometry.bottom, 16);
+      assert.ok(geometry.width < 110 && geometry.height >= 44, 'compact control with a comfortable touch target');
+      assert.equal(geometry.flagLoaded, true);
+      assert.equal(geometry.hit, true, 'page content does not intercept the toggle');
+    }
+    for (const path of ['/', '/shop', '/about', '/products/browser-fixture', '/track-order', '/cart', '/checkout',
+      '/shipping-policy', '/refund-policy', '/privacy-policy', '/terms', '/login', '/signup',
+      '/forgot-password', '/resend-verification', '/verify-email', '/reset-password', '/unknown-route']) {
+      await p.goto(`${origin}${local(lang, path)}`);
+      await toggle.waitFor();
+      assert.equal(await toggle.count(), 1);
+      assert.equal((await toggle.textContent()).trim(), lang.toUpperCase());
+      assert.equal(await toggle.locator('img').getAttribute('src'), `/flags/${lang === 'en' ? 'us' : 'eg'}.svg`);
+      assert.equal(await p.locator('.site-header .lang-header').count(), 0);
+    }
+    await p.evaluate(() => scrollTo({ top: document.body.scrollHeight, behavior: 'instant' }));
+    assert.equal((await toggle.boundingBox()).y, 840, 'control stays fixed after scrolling');
+  });
+}
+
+test('floating toggle switches both languages by keyboard on mobile without moving header controls', async t => {
+  const p = await pageFor(t, { width: 390, path: '/shop?sort=newest#filters' });
+  const toggle = p.locator('.qc-floating-language');
+  const before = await p.locator('.mobile-menu').boundingBox();
+  await toggle.focus();
+  assert.ok(await toggle.evaluate(e => e.matches(':focus-visible') && getComputedStyle(e).outlineStyle !== 'none'));
+  await p.keyboard.press('Enter');
+  await at(p, '/ar/shop?sort=newest#filters');
+  await p.waitForFunction(() => document.querySelector('.qc-floating-language').textContent.trim() === 'AR');
+  assert.equal(await toggle.locator('img').getAttribute('src'), '/flags/eg.svg');
+  assert.equal((await p.locator('.mobile-menu').boundingBox()).x, before.x);
+  await toggle.focus();
+  await p.keyboard.press('Enter');
+  await at(p, '/shop?sort=newest#filters');
+  await p.waitForFunction(() => document.querySelector('.qc-floating-language').textContent.trim() === 'EN');
+  assert.equal((await p.locator('.mobile-menu').boundingBox()).x, before.x);
+});
+
+for (const lang of ['en', 'ar']) {
+  for (const width of [1440, 390, 320]) {
+    test(`${lang} ${width}: admin defaults to Overview, responsive data and all existing tabs work`, async t => {
+      const p = await pageFor(t, { lang, width, role: 'admin', path: '/admin', apiHandler: adminFixtureResponse });
+      await p.locator('.qc-overview-metric').first().waitFor();
+      assert.equal(await p.locator('.qc-admin-tabs [aria-current="page"]').textContent(), lang === 'ar' ? 'نظرة عامة' : 'Overview');
+      assert.equal(await p.locator('.qc-overview-metric').count(), 4);
+      assert.ok(await p.locator('.qc-overview-metric').first().textContent().then(value => value.includes('200') || value.includes('٢٠٠')));
+      assert.equal(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'dashboard does not overflow the viewport');
+      assert.equal(await p.locator('.qc-floating-language').isVisible(), true);
+      for (const [index, tab] of [[1, 'orders'], [2, 'products'], [3, 'categories'], [4, 'settings'], [0, 'overview']]) {
+        await p.locator('.qc-admin-tabs button').nth(index).click();
+        await at(p, local(lang, `/admin?tab=${tab}`));
+        if (tab === 'overview') await p.locator('.qc-overview-metric').first().waitFor();
+        else await p.locator('.qc-admin-panel').waitFor();
+      }
+    });
+  }
+  test(`${lang}: chart periods, recent order deep link, attention filters and exact product editor`, async t => {
+    const requests = [];
+    const p = await pageFor(t, { lang, role: 'admin', path: '/admin?tab=overview', apiHandler: (request, u) => { requests.push(u.pathname + u.search); return adminFixtureResponse(request, u); } });
+    for (const [index, range] of ['today', '7d', '30d', '90d'].entries()) {
+      await p.locator('.qc-overview-periods button').nth(index).click();
+      await p.waitForFunction(() => document.querySelectorAll('.qc-overview-metric').length === 4);
+      await p.locator('.qc-overview-daily summary').click();
+      assert.equal(await p.locator('.qc-overview-daily tbody tr').count(), range === 'today' ? 1 : Number(range.slice(0, -1)));
+      assert.ok(requests.includes(`/api/admin/overview?range=${range}`));
+    }
+    await p.locator('.qc-overview-panel table a').click();
+    await at(p, local(lang, `/admin?tab=orders&order=${fixtureId}`));
+    await p.locator('[aria-label="Order details"]').waitFor();
+    assert.match(await p.locator('[aria-label="Order details"] h3').textContent(), /QC-ABCDEF123456/);
+    await p.reload(); await p.locator('[aria-label="Order details"]').waitFor();
+    await p.locator('[aria-label="Order details"] button').first().click();
+    await at(p, local(lang, '/admin?tab=orders'));
+    assert.ok(await p.locator('.qc-admin-panel h2').evaluate(e=>e===document.activeElement));
+    await p.goBack(); await p.locator('[aria-label="Order details"]').waitFor();
+    for (const queue of ['payment_reviews','confirmation','packing_shipping','unpaid_digital']) {
+      await p.goto(`${origin}${local(lang, '/admin')}`);
+      const response = p.waitForResponse(r => r.url().endsWith(`/api/admin/orders?page=1&queue=${queue}`));
+      await p.locator(`.qc-overview-attention a[href$="queue=${queue}"]`).click();
+      await at(p, local(lang, `/admin?tab=orders&queue=${queue}`));
+      await response;
+      assert.ok(requests.includes(`/api/admin/orders?page=1&queue=${queue}`));
+    }
+    await p.goto(`${origin}${local(lang, '/admin?tab=products&page=3')}`);
+    await p.locator('.qc-admin-tabs button').first().click();
+    const draftsResponse = p.waitForResponse(r => r.url().endsWith('/api/admin/catalog/products?page=1&status=draft'));
+    await p.locator('.qc-overview-attention a[href$="status=draft"]').click();
+    await at(p, local(lang, '/admin?tab=products&status=draft'));
+    await draftsResponse;
+    assert.ok(requests.includes('/api/admin/catalog/products?page=1&status=draft'));
+    await p.goto(`${origin}${local(lang, '/admin')}`);
+    await p.locator('#inventory-alerts a').click();
+    await at(p, local(lang, `/admin?tab=products&product=${fixtureId}`));
+    await p.getByRole('heading', { name: 'Edit product', exact: true }).waitFor();
+    assert.equal(await p.getByLabel('Name (EN)', { exact: true }).inputValue(), 'Test coffee');
+  });
+}
+
+test('overview has explicit loading, retry, error, zero-sales and denied-access states', async t => {
+  let mode = 'loading', release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const p = await pageFor(t, { role: 'admin', path: '/admin', apiHandler: async (_request, u) => {
+    if (u.pathname !== '/api/admin/overview') return;
+    if (mode === 'loading') await gate;
+    if (mode === 'error') return { status: 503, json: { error: 'Overview temporarily unavailable' } };
+    if (mode === 'denied') return { status: 403, json: { error: 'Access denied' } };
+    return { json: { overview: overviewFixture(u.searchParams.get('range') || '30d') } };
+  } });
+  await p.getByRole('status').filter({ hasText: 'Loading overview' }).waitFor();
+  assert.equal(await p.locator('.qc-overview-metric').count(), 0, 'no fabricated loading metrics');
+  mode = 'error'; release();
+  await p.getByRole('alert').filter({ hasText: 'Overview could not be loaded' }).waitFor();
+  mode = 'empty'; await p.getByRole('button', { name: 'Try again' }).click();
+  await p.getByText('No orders yet', { exact: true }).waitFor();
+  assert.equal(await p.getByText('No collected payments in this period', { exact: true }).count(), 1);
+  assert.match(await p.locator('.qc-overview-metric').nth(2).textContent(), /3/);
+  assert.match(await p.locator('.qc-overview-metric').nth(3).textContent(), /1/);
+  assert.match(await p.locator('.qc-overview-disclosure').textContent(), /unavailable/);
+  mode = 'denied'; await p.getByRole('button', { name: 'Refresh overview', exact: true }).click();
+  await p.getByRole('alert').filter({ hasText: 'administrator session' }).waitFor();
+  assert.equal(await p.locator('.qc-overview-metric').count(), 0);
+});
+
+for (const role of ['guest', 'customer']) test(`${role}: admin route cannot load Overview analytics`, async t => {
+  let analyticsCalls = 0;
+  const p = await pageFor(t, { role, path: '/admin', apiHandler: (_request, u) => { if (u.pathname === '/api/admin/overview') analyticsCalls++; } });
+  await at(p, role === 'guest' ? '/login' : '/account');
+  assert.equal(await p.locator('.qc-overview').count(), 0);
+  assert.equal(analyticsCalls, 0);
 });

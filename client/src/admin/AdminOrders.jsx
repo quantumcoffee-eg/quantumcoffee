@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { useLocale } from '../lib/i18n.jsx';
 import { money, translated } from '../components/CatalogCards.jsx';
@@ -7,11 +8,21 @@ const nextStates={received:['confirmed','cancelled'],confirmed:['packing','cance
 const choices=['','received','confirmed','packing','shipped','delivered','cancelled'];
 export default function AdminOrders(){
   const {lang}=useLocale(),ar=lang==='ar';
-  const [status,setStatus]=useState(''),[page,setPage]=useState(1),[orders,setOrders]=useState([]),[pages,setPages]=useState(0);
+  const [params,setParams]=useSearchParams();
+  const status=choices.includes(params.get('status'))?params.get('status'):'';
+  const queue=params.get('queue')||'';
+  const orderId=params.get('order')||'';
+  const page=Math.max(1,Math.min(1000,Number(params.get('page'))||1));
+  const [orders,setOrders]=useState([]),[pages,setPages]=useState(0);
+  const detailRef=useRef(null);
+  const headingRef=useRef(null);
+  const queryChange=changes=>{const next=new URLSearchParams(params);for(const [key,value] of Object.entries(changes)){if(value)next.set(key,String(value));else next.delete(key);}setParams(next)};
   const [open,setOpen]=useState(null),[next,setNext]=useState(''),[proofUrl,setProofUrl]=useState(''),[reviewReason,setReviewReason]=useState(''),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
-  const load=useCallback(async()=>{setLoading(true);setError('');try{const p=new URLSearchParams({page:String(page)});if(status)p.set('status',status);const data=await api(`/admin/orders?${p}`);setOrders(data.items);setPages(data.pagination.pages)}catch(e){setError(e.message)}finally{setLoading(false)}},[page,status]);
-  useEffect(()=>{void load()},[load]);
-  const openOrder=async id=>{setError('');setOpen(null);setProofUrl('');setReviewReason('');try{const data=await api(`/admin/orders/${id}`);setOpen(data.order);setNext('')}catch(e){setError(e.message)}};
+  const load=useCallback(async({signal}={})=>{setLoading(true);setError('');setOrders([]);try{const p=new URLSearchParams({page:String(page)});if(status)p.set('status',status);if(queue)p.set('queue',queue);const data=await api(`/admin/orders?${p}`,{signal});if(!signal?.aborted){setOrders(data.items);setPages(data.pagination.pages)}}catch(e){if(!signal?.aborted)setError(e.message)}finally{if(!signal?.aborted)setLoading(false)}},[page,status,queue]);
+  useEffect(()=>{const controller=new AbortController();void load({signal:controller.signal});return()=>controller.abort()},[load]);
+  const openOrder=useCallback(async (id,{signal}={})=>{setError('');setOpen(null);setProofUrl('');setReviewReason('');try{const data=await api(`/admin/orders/${id}`,{signal});if(!signal?.aborted){setOpen(data.order);setNext('')}}catch(e){if(!signal?.aborted)setError(e.message)}},[]);
+  useEffect(()=>{if(!orderId||!/^[a-f0-9]{24}$/i.test(orderId)){setOpen(null);return;}const controller=new AbortController();void openOrder(orderId,{signal:controller.signal});return()=>controller.abort()},[orderId,openOrder]);
+  useEffect(()=>{if(open?.id&&detailRef.current){detailRef.current.focus({preventScroll:true});detailRef.current.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'})}},[open?.id]);
   const update=async()=>{if(!open||!next)return;setBusy(true);setError('');setNotice('');try{
     const result=await api(`/admin/orders/${open.id}/status`,{method:'PATCH',body:{revision:open.revision,status:next}});
     setOpen(result.order);setNext('');setNotice(ar?'تم تحديث حالة الطلب.':'Order status updated.');await load();
@@ -22,14 +33,16 @@ export default function AdminOrders(){
     setProofUrl('');setReviewReason('');setNotice(ar?'تم تحديث الدفع.':'Payment status updated.');await openOrder(open.id);await load();
   }catch(e){setError(e.message)}finally{setBusy(false)}};
   return <section className="qc-admin-panel">
-    <div className="qc-admin-row"><h2>{ar?'إدارة الطلبات':'Orders'}</h2><button type="button" className="qc-admin-secondary" onClick={load}>{ar?'تحديث':'Refresh'}</button></div>
+    <div className="qc-admin-row"><h2 ref={headingRef} tabIndex={-1}>{ar?'إدارة الطلبات':'Orders'}</h2><button type="button" className="qc-admin-secondary" onClick={load}>{ar?'تحديث':'Refresh'}</button></div>
     <p className="qc-admin-tip">{ar?'لا توجد طلبات حقيقية قبل تفعيل الشراء في إعدادات الإنتاج.':'No live orders can be placed until checkout is explicitly enabled.'}</p>
-    <label>{ar?'تصفية الحالة':'Filter by status'}<select value={status} onChange={e=>{setStatus(e.target.value);setPage(1);setOpen(null)}}>{choices.map(s=><option value={s} key={s}>{s||'All statuses'}</option>)}</select></label>
+    <label>{ar?'تصفية الحالة':'Filter by status'}<select value={status} onChange={e=>queryChange({status:e.target.value,page:null,order:null})}>{choices.map(s=><option value={s} key={s}>{s||'All statuses'}</option>)}</select></label>
+    <label>{ar?'قائمة المتابعة':'Attention queue'}<select value={queue} onChange={e=>queryChange({queue:e.target.value,page:null,order:null})}>{[['','All orders','كل الطلبات'],['payment_reviews','Payment reviews','مراجعة المدفوعات'],['confirmation','Awaiting confirmation','بانتظار التأكيد'],['packing_shipping','Packing or shipping','التجهيز والشحن'],['unpaid_digital','Unpaid digital orders','طلبات تحويل غير مدفوعة']].map(([value,en,arabic])=><option value={value} key={value}>{ar?arabic:en}</option>)}</select></label>
     {error&&<p className="qc-admin-error" role="alert">{error}</p>}{notice&&<p role="status" className="qc-admin-notice">{notice}</p>}
+    {orderId&&!/^[a-f0-9]{24}$/i.test(orderId)&&<p role="alert" className="qc-admin-error">{ar?'رابط الطلب غير صالح.':'Invalid order link.'}</p>}
     {loading&&<p role="status">{ar?'جار التحميل…':'Loading…'}</p>}
-    <div className="qc-admin-list">{orders.map(o=><div className="qc-admin-list-item" key={o.id}><div><strong>{o.orderNumber}</strong><p>{o.customer.name} · {o.customer.phone} · {money(o.totalPiastres)}</p><p>{o.fulfillmentState} · {o.paymentMethod} · {o.paymentState}</p></div><button type="button" onClick={()=>openOrder(o.id)}>{ar?'عرض':'Details'}</button></div>)}{!orders.length&&!loading&&<p>{ar?'لا توجد طلبات.':'No orders found.'}</p>}</div>
-    {pages>1&&<div className="qc-admin-row"><button type="button" disabled={page<=1} onClick={()=>setPage(n=>n-1)}>Previous</button><span>{page}/{pages}</span><button type="button" disabled={page>=pages} onClick={()=>setPage(n=>n+1)}>Next</button></div>}
-    {open&&<section className="qc-admin-form" aria-label="Order details"><div className="qc-admin-row"><h3>{open.orderNumber}</h3><button type="button" className="qc-admin-secondary" onClick={()=>setOpen(null)}>Close</button></div>
+    <div className="qc-admin-list">{orders.map(o=><div className="qc-admin-list-item" key={o.id}><div><strong>{o.orderNumber}</strong><p>{o.customer.name} · {o.customer.phone} · {money(o.totalPiastres)}</p><p>{o.fulfillmentState} · {o.paymentMethod} · {o.paymentState}</p></div><button type="button" onClick={()=>queryChange({order:o.id})}>{ar?'عرض':'Details'}</button></div>)}{!orders.length&&!loading&&<p>{ar?'لا توجد طلبات.':'No orders found.'}</p>}</div>
+    {pages>1&&<div className="qc-admin-row"><button type="button" disabled={page<=1} onClick={()=>queryChange({page:page-1,order:null})}>Previous</button><span>{page}/{pages}</span><button type="button" disabled={page>=pages} onClick={()=>queryChange({page:page+1,order:null})}>Next</button></div>}
+    {open&&<section ref={detailRef} tabIndex={-1} className="qc-admin-form" aria-label="Order details"><div className="qc-admin-row"><h3>{open.orderNumber}</h3><button type="button" className="qc-admin-secondary" onClick={()=>{queryChange({order:null});headingRef.current?.focus();}}>Close</button></div>
       <p>{open.customer.name} · {open.customer.phone} · {open.customer.email||'No email'}</p>
       <p>{open.customer.governorate} · {open.customer.city} · {open.customer.street} {open.customer.details}</p>
       {open.lines.map((line,i)=><p key={i}>{translated(line.name,lang)} ({line.packGrams} g · {line.grindCode}) × {line.quantity} — {money(line.lineTotalPiastres)}</p>)}

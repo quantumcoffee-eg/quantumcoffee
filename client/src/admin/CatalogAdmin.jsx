@@ -6,6 +6,7 @@ import { useSession } from '../lib/session.jsx';
 import './catalog-admin.css';
 import MediaEditor from './MediaEditor.jsx';
 import AdminOrders from './AdminOrders.jsx';
+import AdminOverview from './AdminOverview.jsx';
 import StoreSettingsAdmin from './StoreSettingsAdmin.jsx';
 import { PREPARATIONS } from '../lib/grinds.js';
 
@@ -31,19 +32,23 @@ export default function CatalogAdmin() {
   const { lang, url } = useLocale();
   const session = useSession();
   const [query,setQuery]=useSearchParams();
-  const tab = ['orders','products','categories','settings'].includes(query.get('tab')) ? query.get('tab') : 'orders';
+  const tab = ['overview','orders','products','categories','settings'].includes(query.get('tab')) ? query.get('tab') : 'overview';
+  const productStatus = ['draft','published','archived'].includes(query.get('status')) ? query.get('status') : '';
+  const productId = query.get('product') || '';
   const ar = lang === 'ar';
   const [categories,setCategories]=useState([]),[products,setProducts]=useState([]),[pagination,setPagination]=useState({page:1,pages:0,total:0});
   const [catDraft,setCatDraft]=useState(null),[prodDraft,setProdDraft]=useState(null);
   const [notice,setNotice]=useState(''),[error,setError]=useState(''),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false);
-  const [page,setPage]=useState(1);
+  const requestedPage=Number(query.get('page')||1);
+  const page=Number.isSafeInteger(requestedPage)&&requestedPage>=1&&requestedPage<=1000?requestedPage:1;
+  const changePage=nextPage=>{const next=new URLSearchParams(query);next.set('page',String(nextPage));setQuery(next)};
   const load = useCallback(async () => {
     setLoading(true);setError('');
     try {
-      const [cats, prods]=await Promise.all([api('/admin/catalog/categories'),api(`/admin/catalog/products?page=${page}`)]);
+      const [cats, prods]=await Promise.all([api('/admin/catalog/categories'),api(`/admin/catalog/products?page=${page}${productStatus ? `&status=${productStatus}` : ''}`)]);
       setCategories(cats.categories);setProducts(prods.items);setPagination(prods.pagination);
     } catch(e){setError(e.message)} finally {setLoading(false)}
-  },[page]);
+  },[page,productStatus]);
   useEffect(()=>{if(tab==='products'||tab==='categories')void load()},[load,tab]);
   const showTab = next => {setQuery({tab:next});setError('');setNotice('');setCatDraft(null);setProdDraft(null)};
   async function submitCategory(e){
@@ -81,17 +86,28 @@ export default function CatalogAdmin() {
     try{await api(`/admin/catalog/categories/${category._id}`,{method:'DELETE'});setNotice(ar?'تم الحذف.':'Category deleted.');await load()}
     catch(err){setError(err.message)}finally{setBusy(false)}
   }
-  const editProduct = p => setProdDraft({...p,categoryId:String(p.categoryId),sizes:(p.sizes||[]).map(s=>({
+  const editProduct = useCallback(p => setProdDraft({...p,categoryId:String(p.categoryId),sizes:(p.sizes||[]).map(s=>({
     grams:String(s.grams),price:fromPiastres(s.pricePiastres),compareAt:fromPiastres(s.compareAtPiastres),grindOptions:s.grindOptions||[]
-  }))});
+  }))}), []);
+  useEffect(() => {
+    if (tab !== 'products' || !productId) return;
+    if (!/^[a-f0-9]{24}$/i.test(productId)) return;
+    const controller = new AbortController();
+    api(`/admin/catalog/products/${productId}`, { signal: controller.signal }).then(result => {
+      if (!controller.signal.aborted) editProduct(result.product);
+    }).catch(error => { if (!controller.signal.aborted) setError(error.message); });
+    return () => controller.abort();
+  }, [tab, productId, editProduct]);
   const editSize = (index,change) => setProdDraft(p=>({...p,sizes:p.sizes.map((s,i)=>i===index?{...s,...change}:s)}));
-  const switchTab = t => <button key={t} type="button" className={tab===t?'selected':''} onClick={()=>showTab(t)}>{ar?({orders:'الطلبات',products:'المنتجات',categories:'الفئات',settings:'الإعدادات'}[t]):t[0].toUpperCase()+t.slice(1)}</button>;
+  const switchTab = t => <button key={t} type="button" aria-current={tab===t?'page':undefined} className={tab===t?'selected':''} onClick={()=>showTab(t)}>{ar?({overview:'نظرة عامة',orders:'الطلبات',products:'المنتجات',categories:'الفئات',settings:'الإعدادات'}[t]):t[0].toUpperCase()+t.slice(1)}</button>;
   return <main className="qc-admin">
     <div className="qc-admin-head"><div><p className="kicker">QUANTUM COFFEE / ADMIN</p><h1>{ar?'لوحة الإدارة':'Store Administration'}</h1><p>{session.user?.email}</p></div><button className="qc-admin-secondary" type="button" onClick={async()=>{try{await session.logout();window.location.assign(url('/login'))}catch(e){setError(e.message)}}}>{ar?'خروج':'Sign out'}</button></div>
-    <nav className="qc-admin-tabs" aria-label="Admin sections">{['orders','products','categories','settings'].map(switchTab)}</nav>
+    <nav className="qc-admin-tabs" aria-label={ar?'أقسام الإدارة':'Admin sections'}>{['overview','orders','products','categories','settings'].map(switchTab)}</nav>
     {error&&<p role="alert" className="qc-admin-error">{error} <button type="button" onClick={load}>{ar?'تحديث':'Reload'}</button></p>}
+    {tab==='products'&&productId&&!/^[a-f0-9]{24}$/i.test(productId)&&<p role="alert" className="qc-admin-error">{ar?'رابط المنتج غير صالح.':'Invalid product link.'}</p>}
     {notice&&<p role="status" className="qc-admin-notice">{notice}</p>}
     {loading&&<p role="status">{ar?'جار التحميل…':'Loading catalog…'}</p>}
+    {tab==='overview'&&<AdminOverview/>}
     {tab==='orders'&&<AdminOrders/>}
     {tab==='settings'&&<StoreSettingsAdmin/>}
     {tab==='categories'&&<section className="qc-admin-panel">
@@ -110,6 +126,7 @@ export default function CatalogAdmin() {
     </section>}
     {tab==='products'&&<section className="qc-admin-panel">
       <div className="qc-admin-row"><h2>{ar?'المنتجات':'Products'}</h2><button type="button" className="qc-admin-primary" disabled={!categories.length} onClick={()=>setProdDraft({...blankProduct(),categoryId:categories[0]?._id||''})}>Add product</button></div>
+      <label>{ar?'حالة النشر':'Filter publication status'} <select value={productStatus} onChange={e=>{const next=new URLSearchParams(query);if(e.target.value)next.set('status',e.target.value);else next.delete('status');next.delete('product');next.delete('page');setQuery(next);setProdDraft(null);}}><option value="">{ar?'كل المنتجات':'All products'}</option><option value="draft">{ar?'مسودات':'Drafts'}</option><option value="published">{ar?'منشورة':'Published'}</option><option value="archived">{ar?'مؤرشفة':'Archived'}</option></select></label>
       <p className="qc-admin-tip">New products begin as drafts. Publish after verified R2 images are attached; checkout remains disabled.</p>
       {prodDraft&&<form onSubmit={submitProduct} className="qc-admin-form"><h3>{prodDraft._id?'Edit product':'New product draft'}</h3>
         {bilingualField(prodDraft,setProdDraft,'name','Name')}
@@ -144,7 +161,7 @@ export default function CatalogAdmin() {
         <div className="qc-admin-row"><button className="qc-admin-primary" disabled={busy}>Save product</button><button type="button" className="qc-admin-secondary" onClick={()=>setProdDraft(null)}>Cancel</button></div>
       </form>}
       <div className="qc-admin-list">{products.map(p=><div className="qc-admin-list-item" key={p._id}><div><b>{p.name[lang]||p.name.en}</b><p>{displayMoney(p.pricePiastres)} {p.compareAtPiastres!=null&&<s>{displayMoney(p.compareAtPiastres)}</s>} · {p.status} · {p.sizes?.length||0} sizes · total stock {p.stockQuantity}</p></div><div><button type="button" onClick={()=>editProduct(p)}>Edit</button><button type="button" disabled={busy||p.status==='archived'} onClick={()=>archiveProduct(p)}>Archive</button></div></div>)}{!products.length&&!loading&&<p>{ar?'لا توجد منتجات.':'No products yet.'}</p>}</div>
-      {pagination.pages>1&&<div className="qc-admin-row"><button type="button" disabled={page<=1} onClick={()=>setPage(p=>p-1)}>Previous</button><span>{page}/{pagination.pages}</span><button type="button" disabled={page>=pagination.pages} onClick={()=>setPage(p=>p+1)}>Next</button></div>}
+      {pagination.pages>1&&<div className="qc-admin-row"><button type="button" disabled={page<=1} onClick={()=>changePage(page-1)}>Previous</button><span>{page}/{pagination.pages}</span><button type="button" disabled={page>=pagination.pages} onClick={()=>changePage(page+1)}>Next</button></div>}
     </section>}
     <p className="qc-admin-return"><Link to={url('/')}>{ar?'العودة للموقع':'Return to storefront'}</Link></p>
   </main>;

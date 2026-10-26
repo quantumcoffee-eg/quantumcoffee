@@ -107,7 +107,9 @@ adminCatalogRoutes.delete('/categories/:id', asyncRoute(async (req, res) => {
 }));
 adminCatalogRoutes.get('/products', asyncRoute(async (req,res)=> {
   const {page,limit,skip}=pageParams(req.query);
-  const [items,total]=await Promise.all([Product.find().sort({createdAt:-1,_id:-1}).skip(skip).limit(limit).lean(), Product.countDocuments()]);
+  const filter={};
+  if(req.query.status!==undefined){if(typeof req.query.status!=='string'||!['draft','published','archived'].includes(req.query.status))return res.status(400).json({error:'Invalid publication status.',code:'INVALID_STATUS'});filter.status=req.query.status;}
+  const [items,total]=await Promise.all([Product.find(filter).sort({createdAt:-1,_id:-1}).skip(skip).limit(limit).lean(), Product.countDocuments(filter)]);
   res.json(response(items.map(adminProduct),total,page));
 }));
 adminCatalogRoutes.get('/products/:id', asyncRoute(async (req,res)=> {

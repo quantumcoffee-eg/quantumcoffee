@@ -11,6 +11,7 @@ import { CartProvider } from './commerce/CartProvider.jsx';
 import { CartPage, CheckoutPage, OrdersPage, TrackPage } from './commerce/CartPages.jsx';
 import SeoRouter from './seo/SeoRouter.jsx';
 import NavigationEffects from './components/NavigationEffects.jsx';
+import FloatingLanguageSwitcher from './components/FloatingLanguageSwitcher.jsx';
 
 function Guard({ role, children }) {
   const { url, t } = useLocale();
@@ -44,7 +45,7 @@ function Layout() {
     <Route path="terms" element={<LegalPage/>}/>
     <Route path="admin/*" element={<Guard role="admin"><AdminPage/></Guard>}/>
     <Route path="*" element={<NotFound/>}/>
-  </Routes><Footer/></SeoRouter>;
+  </Routes><Footer/><FloatingLanguageSwitcher/></SeoRouter>;
 }
 export default function App() {
   return <SessionProvider><CartProvider><LocaleProvider><Routes>

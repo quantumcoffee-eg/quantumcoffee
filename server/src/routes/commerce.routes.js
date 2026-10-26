@@ -11,6 +11,7 @@ import { loadUser, requireRole } from '../security/session.js';
 import { rateLimit } from '../security/rate-limit.js';
 import { queueOrderMailSafely } from '../notifications/order-mail.js';
 import { CommerceError, validateItems, validateCheckout, validateCustomer, lineTotals, fingerprint, newOrderNumber, statusTransition, phoneNumber, ORDERING_IMPLEMENTED } from '../commerce/checkout.js';
+import { orderQueueFilter, OverviewInputError } from '../admin/overview-values.js';
 
 export const commerceRoutes = Router();
 export const adminOrdersRoutes = Router();
@@ -133,8 +134,10 @@ adminOrdersRoutes.use(noCache,db,loadUser,requireRole('admin'));
 adminOrdersRoutes.get('/',run(async(req,res)=>{
   const page=Number(req.query.page||1);
   if(!Number.isSafeInteger(page)||page<1||page>1000)throw new CommerceError('Invalid page.');
-  const filter={};
-  if(req.query.status){if(!['received','confirmed','packing','shipped','delivered','cancelled'].includes(req.query.status))throw new CommerceError('Invalid status.');filter.fulfillmentState=req.query.status;}
+  let filter;
+  try { filter=orderQueueFilter(req.query.queue); }
+  catch(error) { if(error instanceof OverviewInputError) throw new CommerceError(error.message,'INVALID_ORDER_QUEUE'); throw error; }
+  if(req.query.status){if(!['received','confirmed','packing','shipped','delivered','cancelled'].includes(req.query.status))throw new CommerceError('Invalid status.');const selected={fulfillmentState:req.query.status};filter=Object.keys(filter).length?{$and:[filter,selected]}:selected;}
   const [items,total]=await Promise.all([Order.find(filter).sort({createdAt:-1,_id:-1}).skip((page-1)*20).limit(20).lean(),Order.countDocuments(filter)]);
   res.json({items:items.map(adminSummary),pagination:{page,limit:20,total,pages:Math.ceil(total/20)}});
 }));
