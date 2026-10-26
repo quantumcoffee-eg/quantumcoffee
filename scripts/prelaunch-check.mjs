@@ -29,6 +29,7 @@ const redirect = read('client/public/_redirects');
 verify('Frontend build inputs', existsSync(resolve(root, 'client/package-lock.json')) && existsSync(resolve(root, 'server/package-lock.json')), 'Both npm lockfiles are needed for reproducible deploys.');
 verify('Prelaunch search exclusion', /<meta\s+name=["']robots["']\s+content=["']noindex,nofollow["']\s*\/>/i.test(html), 'Keep noindex,nofollow until final SEO approval.');
 verify('Static route fallback', redirect.includes('/* /index.html 200'), 'Cloudflare Pages needs SPA fallback for routes.');
+verify('Static public HTML head generation', /vite build && node \.\.\/scripts\/generate-static-heads\.mjs/.test(read('client/package.json')) && existsSync(resolve(root, 'scripts/seo/static-head-values.mjs')), 'Route-specific public HTML heads must run after Vite without removing prelaunch noindex.');
 verify('Private environment excluded', /^\.env\s*$/m.test(gitignore) && /^\.env\.\*\s*$/m.test(gitignore), 'Keep actual .env files out of Git.');
 verify('Source checkout launch lock', /export\s+const\s+ORDERING_IMPLEMENTED\s*=\s*false\s*;/.test(checkout), 'Do not remove the checkout code lock before checkout security review.');
 verify('Production bootstrap guard', /ALLOW_ADMIN_BOOTSTRAP/.test(prod) && /CHECKOUT_ENABLED/.test(prod), 'Production configuration guard must enforce bootstrap and checkout restrictions.');
