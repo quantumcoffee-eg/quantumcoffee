@@ -17,7 +17,7 @@ test('real replica-set C2 accounting, refunds, reconciliation and failure recove
   t.after(() => db.close());
   let at = new Date('2026-10-26T08:00:00Z'), product;
   const admin = new mongoose.Types.ObjectId(), verifier = new mongoose.Types.ObjectId();
-  const options = { models, connection, clock: () => at, env: { ORDER_EMAILS_ENABLED: 'true', ORDER_ALERT_EMAIL: 'owner@example.invalid' } };
+  const options = { models, connection, clock: () => at, env: { ORDER_EMAILS_ENABLED: 'true', ORDER_ALERT_EMAIL: 'owner@example.invalid', PUBLIC_SITE_ORIGIN: 'https://quantum.example' } };
   const orders = createOrderService(options), payments = createPaymentService(options);
   // Test-only policy injection; no production caller supplies authorization.
   const refunds = createRefundFoundation({ ...options, authorize: async () => true });

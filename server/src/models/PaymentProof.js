@@ -10,7 +10,9 @@ const schema=new mongoose.Schema({
   submittedAt:{type:Date,default:null},
   reviewedAt:{type:Date,default:null},
   reviewedBy:{type:mongoose.Schema.Types.ObjectId,ref:'User',default:null},
-  reason:{type:String,default:'',maxlength:300}
+  reason:{type:String,default:'',maxlength:300},
+  freezeCandidateKey:{type:String,default:null},
+  freezeAttempts:{type:[new mongoose.Schema({key:{type:String,required:true},startedAt:{type:Date,required:true},copiedAt:{type:Date,default:null}},{_id:false,strict:'throw'})],default:[]}
 },{timestamps:true,strict:'throw'});
 schema.index({orderId:1,createdAt:-1});
 schema.index({state:1,expiresAt:1});

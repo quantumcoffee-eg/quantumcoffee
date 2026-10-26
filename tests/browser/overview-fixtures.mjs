@@ -4,6 +4,11 @@ import { reportingPeriod } from '../../server/src/admin/overview-values.js';
 import { assembleOverview } from '../../server/src/admin/overview-service.js';
 import { defaultStoreSettings } from '../../server/src/store/settings-values.js';
 export const fixtureId = '507f1f77bcf86cd799439011';
+export function operationsFixture(mode = 'disabled', populated = false) {
+  return { calculatedAt: '2026-10-26T12:00:00Z', email: { mode, enabled: mode !== 'disabled', configured: mode !== 'unconfigured', pending: populated ? 2 : 0, dead: populated ? 1 : 0, uncertain: populated ? 1 : 0, stuck: populated ? 1 : 0,
+    lastAcceptedAt: populated ? '2026-10-26T11:00:00Z' : null, lastProcessedAt: populated ? '2026-10-26T11:00:00Z' : null, manualReplayEnabled: false },
+    storage: { expiredProofIntents: 0, unattachedProofCopies: 0, uncertainProofCopies: 0, expiredImageIntents: 0, unattachedImages: 0, objectInventoryScanned: false, automaticCleanupEnabled: false } };
+}
 export const fixtureCategory = { _id: '507f1f77bcf86cd799439012', name: { en: 'Test category', ar: 'فئة اختبار' }, slug: 'test-category', active: true };
 export const fixtureProduct = { _id: fixtureId, revision: 1, name: { en: 'Test coffee', ar: 'قهوة اختبار' }, description: { en: 'Test only', ar: '' }, slug: 'test-coffee', categoryId: fixtureCategory._id, status: 'draft', pricePiastres: 10000, stockQuantity: 0, sizes: [{ grams: 250, pricePiastres: 10000, grindOptions: [{ code: 'espresso', stockQuantity: 0 }] }], imageKeys: [], imageUrls: [] };
 export const fixtureOrder = { id: fixtureId, orderNumber: 'QC-ABCDEF123456', createdAt: '2026-10-26T09:00:00Z', totalPiastres: 20000, subtotalPiastres: 18000, shippingPiastres: 2000, paymentState: 'paid', paymentMethod: 'instapay', fulfillmentState: 'confirmed', revision: 1, paymentProofId: null,
@@ -19,6 +24,7 @@ export function overviewFixture(range = '30d', populated = false) {
   });
 }
 export function adminFixtureResponse(_request, u) {
+  if (u.pathname === '/api/admin/overview/operations') return { json: { operations: operationsFixture() } };
   if (u.pathname === '/api/admin/overview/reconciliation') return { json: { reconciliation: { complete: true, issueCount: 0, issueCounts: {}, items: [], limit: 25, refundRecordingEnabled: false, adjustmentRecordingEnabled: false } } };
   if (u.pathname === '/api/admin/overview') return { json: { overview: overviewFixture(u.searchParams.get('range') || '30d', true) } };
   if (u.pathname === '/api/admin/store/settings') return { json: { settings: defaultStoreSettings(), revision: 0 } };

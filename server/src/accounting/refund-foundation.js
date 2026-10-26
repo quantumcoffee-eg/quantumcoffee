@@ -84,9 +84,11 @@ export function createRefundFoundation({ authorize = locked, ...options } = {}) 
       }
       const collection = await PaymentEvent.findById(record.collectionId).session(session).lean();
       if (!collection || occurredAt < collection.occurredAt) throw conflict('A refund cannot predate its collection.');
+      const order = await transactionOrder(Order, record.orderId, session);
       const result = await RefundCase.findOneAndUpdate({ _id: caseId, state: 'requested' }, { $set: { state: 'external_completed', externalReference, paymentMethod, evidenceSha256, occurredAt, reportedBy: by, reportedAt: now() } }, { session, new: true, runValidators: true }).lean();
       if (!result) throw conflict('Refund request changed. Reload first.');
-      await Order.updateOne({ _id: record.orderId }, { $inc: { revision: 1 }, $push: { paymentHistory: { state: 'refund_external_reported', at: now(), by, reason: 'External completion reported; independent verification still required.' } } }, { session });
+      const audit = await Order.updateOne({ _id: record.orderId, revision: order.revision }, { $inc: { revision: 1 }, $push: { paymentHistory: { state: 'refund_external_reported', at: now(), by, reason: 'External completion reported; independent verification still required.' } } }, { session });
+      if (audit.modifiedCount !== 1) throw conflict('Order changed before the external-completion audit was recorded.');
       return result;
     });
   }

@@ -19,6 +19,7 @@ export function orderMailContent({kind,audience,orderNumber,fulfillmentState,pay
       !Number.isSafeInteger(totalPiastres) || totalPiastres <= 0) throw new Error('Invalid order notification.');
   if (typeof siteOrigin !== 'string' || !/^https:\/\/[^/?#]+$/.test(siteOrigin)) throw new Error('Notification site origin must use HTTPS.');
   if (kind === 'refund_recorded' && (!Number.isSafeInteger(monetaryAmountPiastres) || monetaryAmountPiastres < 1 || monetaryAmountPiastres > totalPiastres)) throw new Error('Invalid verified refund amount.');
+  if (kind === 'payment' && paymentState === 'paid' && monetaryAmountPiastres !== totalPiastres) throw new Error('Invalid verified collection amount.');
   let title;
   let arabic;
   if (kind === 'placed') {
@@ -37,6 +38,7 @@ export function orderMailContent({kind,audience,orderNumber,fulfillmentState,pay
     `Order status: ${STATES[fulfillmentState][0]}`,
     `Payment status: ${STATES[paymentState][0]}`,
     `Total: ${formatMoney(totalPiastres)}`,
+    ...(kind === 'payment' && paymentState === 'paid' ? [`Verified collection: ${formatMoney(monetaryAmountPiastres)}`] : []),
     ...(kind === 'refund_recorded' ? [`Verified refund: ${formatMoney(monetaryAmountPiastres)}`] : []),
   ];
   const instruction = audience === 'admin'

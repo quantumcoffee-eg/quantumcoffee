@@ -5,7 +5,7 @@ import {databaseReady} from '../db/connect.js';
 import {loadUser,requireRole} from '../security/session.js';
 import {rateLimit} from '../security/rate-limit.js';
 import {CommerceError, phoneNumber} from '../commerce/checkout.js';
-import {proofIntent,proofConfirmation,proofDecision,correctProofSignature,proofEligible,verifiedProofKey} from '../payments/proof.js';
+import {proofIntent,proofConfirmation,proofDecision,correctProofSignature,proofEligible} from '../payments/proof.js';
 import {paymentService} from '../commerce/payment-service.js';
 import {privateR2Ready,proofUploadUrl,inspectProof,freezeProof,privateProofViewUrl} from '../payments/private-r2.js';
 
@@ -64,11 +64,12 @@ paymentRoutes.post('/:id/confirm',rateLimit({limit:12,windowMs:15*60*1000}),stor
     throw new CommerceError('The screenshot does not match the expected format or size.','PROOF_INVALID');
   // Freeze an immutable copy. The customer's original signed PUT may be replayed
   // before its 90-second expiry; admin must never view that mutable upload key.
-  const frozenKey=verifiedProofKey(proof.key);
+  const frozenKey=await paymentService.startProofFreeze({orderId:order._id,proofId:proof._id});
   await freezeProof(proof.key,frozenKey);
   const frozen=await inspectProof(frozenKey);
   if(frozen.size!==proof.size || frozen.contentType!==proof.contentType || !correctProofSignature(proof.contentType,frozen.bytes))
     throw new CommerceError('The final screenshot failed verification.','PROOF_INVALID');
+  await paymentService.noteProofCopied({orderId:order._id,proofId:proof._id,key:frozenKey});
   const result=await paymentService.confirmProof({orderId:order._id,proofId:proof._id,frozenKey});
   res.json({order:receiptState(result.order),...(result.recovered?{recovered:true}:{})});
 }));

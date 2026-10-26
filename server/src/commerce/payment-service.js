@@ -32,7 +32,7 @@ export function createPaymentService(options = {}) {
       if (!proofEligible(order)) throw new CommerceError('Order is not eligible for payment proof.', 'PROOF_NOT_ALLOWED', 409);
       requireUncollected(order);
       if (proof.state !== 'pending' || proof.expiresAt <= at) throw new CommerceError('Upload expired. Start another upload.', 'PROOF_EXPIRED', 410);
-      if (frozenKey !== verifiedProofKey(proof.key)) throw new CommerceError('The verified payment proof does not match this upload.', 'PROOF_INVALID');
+      if (frozenKey !== (proof.freezeCandidateKey || verifiedProofKey(proof.key))) throw new CommerceError('The verified payment proof does not match this upload.', 'PROOF_INVALID');
       const updated = await Order.findOneAndUpdate({ _id: orderId, revision: order.revision, paymentState: order.paymentState, fulfillmentState: order.fulfillmentState },
         { $set: { paymentState: 'awaiting_verification', paymentProofId: proofId }, $inc: { revision: 1 }, $push: { paymentHistory: { state: 'awaiting_verification', at } } }, { new: true, session, runValidators: true }).lean();
       if (!updated) throw new CommerceError('Order payment changed. Reload first.', 'PAYMENT_CONFLICT', 409);
@@ -82,6 +82,25 @@ export function createPaymentService(options = {}) {
       return { order: updated, changed: true };
     });
   }
-  return { reserveProofUpload, confirmProof, reviewPayment };
+  async function startProofFreeze({ orderId, proofId }) {
+    return transaction(async session => {
+      const order = await transactionOrder(Order, orderId, session), at = now();
+      const proof = await PaymentProof.findOne({ _id: proofId, orderId }).session(session).lean();
+      if (!proof || !proofEligible(order) || proof.state !== 'pending' || proof.expiresAt <= at) throw new CommerceError('Proof is not available for confirmation.', 'PROOF_NOT_ALLOWED', 409);
+      requireUncollected(order);
+      if ((proof.freezeAttempts || []).length >= 5) throw new CommerceError('Confirmation attempt limit reached. Contact the shop.', 'PROOF_LIMIT', 429);
+      const key = verifiedProofKey(proofKey(PROOF_TYPES[proof.contentType]));
+      const locked = await Order.updateOne({ _id: orderId, revision: order.revision }, { $inc: { revision: 1 } }, { session });
+      if (locked.modifiedCount !== 1) throw new CommerceError('Order changed. Reload first.', 'EDIT_CONFLICT', 409);
+      const result = await PaymentProof.updateOne({ _id: proofId, state: 'pending', expiresAt: { $gt: at } }, { $set: { freezeCandidateKey: key }, $push: { freezeAttempts: { key, startedAt: at } } }, { session, runValidators: true });
+      if (result.modifiedCount !== 1) throw new CommerceError('Proof changed. Retry confirmation.', 'PROOF_CONFLICT', 409);
+      return key;
+    });
+  }
+  async function noteProofCopied({ orderId, proofId, key }) {
+    const result = await PaymentProof.updateOne({ _id: proofId, orderId, 'freezeAttempts.key': key }, { $set: { 'freezeAttempts.$.copiedAt': now() } }, { maxTimeMS: 5000, timeoutMS: 5000, writeConcern: { w: 'majority', wtimeout: 3000 } });
+    if (result.matchedCount !== 1) throw new CommerceError('Copy audit could not be recorded. Retry confirmation.', 'PROOF_CONFLICT', 409);
+  }
+  return { reserveProofUpload, confirmProof, reviewPayment, startProofFreeze, noteProofCopied };
 }
 export const paymentService = createPaymentService();

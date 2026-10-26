@@ -1,65 +1,98 @@
 import OrderMail from '../models/OrderMail.js';
-import {databaseReady} from '../db/connect.js';
-import {makeMailTransport} from '../mailer.js';
-import {orderMailContent} from './order-mail-content.js';
-import {notificationDocuments,orderEmailIssues} from './order-mail-values.js';
+import { databaseReady } from '../db/connect.js';
+import { makeMailTransport } from '../mailer.js';
+import { orderMailContent, isMailAddress } from './order-mail-content.js';
+import { notificationDocuments, orderEmailIssues } from './order-mail-values.js';
+import { createMailQueue } from './mail-queue.js';
+import { verifyMonetaryMail } from './mail-integrity.js';
+import { MAIL_BATCH_SIZE, MAIL_SEND_MS, MAIL_POLL_MS, MAIL_DB_MS, mailFailure } from './mail-policy.js';
 
-const MAX_ATTEMPTS=5;
-const MAX_PER_TICK=5;
-const TWO_MINUTES=2*60*1000;
-const queueEnabled = (env=process.env) => env.ORDER_EMAILS_ENABLED==='true';
-export async function queueOrderMail(kind,order,session,{model=OrderMail,env=process.env,monetary=null}={}) {
-  if (!queueEnabled(env)) return;
-  const docs=notificationDocuments(kind,order,env,monetary);
+export async function queueOrderMail(kind, order, session, { model = OrderMail, env = process.env, monetary = null, models } = {}) {
+  if (env.ORDER_EMAILS_ENABLED !== 'true') return;
+  if (!session?.inTransaction()) throw new Error('Notification enqueueing requires the business transaction.');
+  const docs = notificationDocuments(kind, order, env, monetary);
   if (!docs.length) return;
-  await model.bulkWrite(docs.map(item=>({updateOne:{filter:{dedupeKey:item.dedupeKey},update:{$setOnInsert:item},upsert:true}})), {ordered:true,...(session?{session}:{})});
-}
-// Queuing errors are logged, but must not turn a committed payment/fulfillment
-// operation into a misleading HTTP error that encourages customers to retry.
-export async function queueOrderMailSafely(kind,order) {
-  try {await queueOrderMail(kind,order)}
-  catch (error) {console.error('Quantum order-email queue error:',error?.code||error?.name||'QUEUE_ERROR')}
+  await verifyMonetaryMail(docs[0], { models, session });
+  await model.bulkWrite(docs.map(item => ({ updateOne: { filter: item.monetaryEventId ? { monetaryEventId: item.monetaryEventId, audience: item.audience } : { dedupeKey: item.dedupeKey }, update: { $setOnInsert: item }, upsert: true } })), { ordered: true, session });
 }
 
-export async function processOrderMailBatch({env=process.env,sendMail}={}) {
-  if (!queueEnabled(env) || !databaseReady()) return {processed:0};
-  if (orderEmailIssues(env).length) throw new Error('Order notification settings are incomplete.');
-  const sender=sendMail?{sendMail}:makeMailTransport(env);
-  let processed=0;
-  for(let i=0;i<MAX_PER_TICK;i++){
-    const now=new Date();
-    const claim=await OrderMail.findOneAndUpdate({$or:[
-      {state:'pending',nextAttemptAt:{$lte:now}},
-      {state:'sending',lockUntil:{$lt:now}},
-    ],attempts:{$lt:MAX_ATTEMPTS}},
-    {$set:{state:'sending',lockUntil:new Date(now.getTime()+60_000)},$inc:{attempts:1}},
-    {new:true,sort:{createdAt:1}}).lean();
-    if(!claim)break;
-    processed++;
-    try{
-      const content=orderMailContent({...claim,siteOrigin:env.PUBLIC_SITE_ORIGIN});
-      await sender.sendMail({from:env.MAIL_FROM,replyTo:env.MAIL_REPLY_TO||undefined,to:claim.to,...content,disableFileAccess:true,disableUrlAccess:true});
-      await OrderMail.updateOne({_id:claim._id,state:'sending'},{$set:{state:'sent',sentAt:new Date(),lockUntil:null,lastError:'',expiresAt:new Date(Date.now()+90*24*60*60*1000)}});
-    }catch(error){
-      const tries=claim.attempts;
-      const delay=Math.min(60*60*1000,30_000*2**(tries-1));
-      await OrderMail.updateOne({_id:claim._id,state:'sending'},{$set:{state:tries>=MAX_ATTEMPTS?'dead':'pending',lockUntil:null,nextAttemptAt:new Date(Date.now()+delay),lastError:String(error?.code||error?.name||'SMTP_ERROR').slice(0,60)}});
-    }
+export function createOrderMailWorker({ env = process.env, model = OrderMail, models, clock = () => new Date(), isReady = databaseReady,
+  transportFactory = signal => makeMailTransport(env, { signal }), timers = { setTimeout, clearTimeout },
+  log = code => console.error('Quantum notification worker:', code) } = {}) {
+  const queue = createMailQueue({ model, clock });
+  let stopped = false, active = null, poll = null, controller = null, started = false;
+  async function send(job) {
+    if (+job.lockUntil <= +new Date(clock()) + MAIL_SEND_MS + 2 * MAIL_DB_MS) throw new Error('Insufficient lease budget for SMTP.');
+    controller = new AbortController();
+    const signal = controller.signal;
+    let deadline, sender;
+    try {
+      sender = transportFactory(signal);
+      if (!sender) throw Object.assign(new Error('SMTP unavailable.'), { code: 'EAUTH' });
+      const timeout = new Promise((_, reject) => {
+        deadline = timers.setTimeout(() => { controller?.abort(); reject(Object.assign(new Error('SMTP deadline exceeded.'), { code: 'SEND_DEADLINE' })); }, MAIL_SEND_MS);
+      });
+      const aborted = new Promise((_, reject) => { signal.addEventListener('abort', () => reject(Object.assign(new Error('SMTP attempt stopped.'), { code: 'SEND_ABORTED' })), { once: true }); });
+      const result = await Promise.race([Promise.resolve().then(() => sender.sendMail({ from: env.MAIL_FROM, replyTo: env.MAIL_REPLY_TO || undefined, to: job.to,
+        ...orderMailContent({ ...job, siteOrigin: env.PUBLIC_SITE_ORIGIN }),
+        messageId: job.messageId || `<qc.${job.dedupeKey}@legacy.quantumcoffee.invalid>`, headers: { 'X-Quantum-Notification': job.dedupeKey },
+        disableFileAccess: true, disableUrlAccess: true })), timeout, aborted]);
+      if (!Array.isArray(result?.accepted) || !result.accepted.some(address => typeof address === 'string' && address.toLowerCase() === job.to.toLowerCase())) {
+        if (result?.rejected?.length) throw Object.assign(new Error('Recipient rejected.'), { responseCode: 550 });
+        throw new Error('SMTP acceptance is unknown.');
+      }
+    } finally { timers.clearTimeout(deadline); sender?.close?.(); controller = null; }
   }
-  return {processed};
+  async function batch() {
+    if (stopped || env.ORDER_EMAILS_ENABLED !== 'true') return { processed: 0, status: 'disabled' };
+    if (!isReady()) return { processed: 0, status: 'database_unavailable' };
+    if (orderEmailIssues(env).length) return { processed: 0, status: 'unconfigured' };
+    let processed = 0;
+    try {
+      await queue.recover();
+      for (let i = 0; i < MAIL_BATCH_SIZE && !stopped; i++) {
+        const job = await queue.claim();
+        if (!job) break;
+        if (stopped) { await queue.finish(job, { state: 'pending', code: 'STOPPED_BEFORE_SEND', category: 'temporary' }); break; }
+        try {
+          orderMailContent({ ...job, siteOrigin: env.PUBLIC_SITE_ORIGIN });
+          if (!/^[a-f0-9]{64}$/.test(job.dedupeKey) || !isMailAddress(job.to) || (job.messageId && !/^<qc\.[a-f0-9]{64}@[a-zA-Z0-9.-]+>$/.test(job.messageId))) throw new Error('Invalid notification identity.');
+        } catch { await queue.finish(job, { state: 'dead', code: 'INVALID_NOTIFICATION', category: 'integrity' }); continue; }
+        try { await verifyMonetaryMail(job, { models }); }
+        catch (error) {
+          if (error.code !== 'MONETARY_EVENT_MISMATCH') throw error;
+          await queue.finish(job, { state: 'dead', code: 'MONETARY_EVENT_MISMATCH', category: 'integrity' }); continue;
+        }
+        if (stopped || !await queue.dispatch(job)) continue;
+        processed++;
+        let outcome;
+        try { await send(job); outcome = { state: 'sent' }; }
+        catch (error) { outcome = mailFailure(error); }
+        // Finalization DB errors never enter the SMTP failure/retry path.
+        if (!await queue.finish(job, outcome)) log('LEASE_OWNERSHIP_LOST');
+      }
+      return { processed, status: 'processed' };
+    } catch { log('NOTIFICATION_DATABASE_UNAVAILABLE'); return { processed, status: 'database_unavailable' }; }
+  }
+  function processBatch() {
+    if (active) return active;
+    active = batch().finally(() => { active = null; });
+    return active;
+  }
+  function start() {
+    if (stopped || started || env.ORDER_EMAILS_ENABLED !== 'true' || orderEmailIssues(env).length) return;
+    started = true;
+    const tick = async () => {
+      poll = null;
+      await processBatch();
+      if (!stopped) { poll = timers.setTimeout(tick, MAIL_POLL_MS); poll?.unref?.(); }
+    };
+    void tick();
+  }
+  return { processBatch, start, abort: () => controller?.abort(),
+    async stop() { stopped = true; timers.clearTimeout(poll); poll = null; await active; } };
 }
-export function startOrderMailWorker(env=process.env) {
-  if (!queueEnabled(env))return ()=>{};
-  if (orderEmailIssues(env).length) throw new Error(orderEmailIssues(env).join(' '));
-  let running=false;
-  const tick=async()=>{
-    if(running)return;
-    running=true;
-    try{await processOrderMailBatch({env})}catch(error){console.error('Quantum order-email worker:',error?.code||error?.name||'WORKER_ERROR')}
-    finally{running=false}
-  };
-  void tick();
-  const timer=setInterval(()=>void tick(),TWO_MINUTES);
-  timer.unref?.();
-  return ()=>clearInterval(timer);
+export async function processOrderMailBatch(options = {}) { return createOrderMailWorker(options).processBatch(); }
+export function startOrderMailWorker(env = process.env) {
+  const worker = createOrderMailWorker({ env }); worker.start(); return worker;
 }

@@ -7,6 +7,7 @@ import { preparationName } from '../lib/grinds.js';
 import { overviewText, overviewMoney, overviewDate } from './overview-copy.js';
 import { MetricCard, StatusPill, RevenueChart } from './OverviewWidgets.jsx';
 import AccountingReconciliation from './AccountingReconciliation.jsx';
+import OperationsHealth from './OperationsHealth.jsx';
 import './admin-overview.css';
 
 const periods = ['today', '7d', '30d', '90d'];
@@ -74,5 +75,6 @@ export default function AdminOverview() {
       <aside className="qc-overview-disclosure"><p>{t('ledgerDefinitions')}</p>{data.financial.missingCollectionEvents > 0 && <p>{number(data.financial.missingCollectionEvents)} {t('missingLedger')}</p>}</aside>
       <AccountingReconciliation/>
     </>}
+    <OperationsHealth/>
   </section>;
 }

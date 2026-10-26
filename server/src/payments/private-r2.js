@@ -9,6 +9,7 @@ async function connection() {
   if (!privateR2Ready()) throw Object.assign(new Error('Quantum Coffee private R2 bucket is not configured.'),{status:503,code:'PROOF_UNAVAILABLE'});
   const sdk=await import('@aws-sdk/client-s3');
   const client=new sdk.S3Client({region:'auto',endpoint:`https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    maxAttempts:1,
     forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',
     credentials:{accessKeyId:process.env.R2_ACCESS_KEY_ID,secretAccessKey:process.env.R2_SECRET_ACCESS_KEY}});
   return {sdk,client,bucket:process.env.R2_PRIVATE_BUCKET};

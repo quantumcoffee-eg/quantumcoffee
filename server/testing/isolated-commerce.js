@@ -7,6 +7,7 @@ import PaymentProof from '../src/models/PaymentProof.js';
 import OrderMail from '../src/models/OrderMail.js';
 import PaymentEvent from '../src/models/PaymentEvent.js';
 import RefundCase from '../src/models/RefundCase.js';
+import MediaAsset from '../src/models/MediaAsset.js';
 
 export function assertIsolatedReplicaUri(uri) {
   const match = typeof uri === 'string' && /^mongodb:\/\/127\.0\.0\.1:(\d{1,5})\/\?replicaSet=qc-c1-rs$/.exec(uri);
@@ -22,7 +23,7 @@ export async function isolatedCommerceDatabase(uri) {
   const assertOwned = () => {
     if (connection.name !== name || !/^qc_c1_test_[a-f0-9]{32}$/.test(name) || connection.host !== '127.0.0.1') throw new Error('Refusing non-test database operation.');
   };
-  const models = Object.fromEntries([Order, Product, Category, PaymentProof, OrderMail, PaymentEvent, RefundCase].map(model => [model.modelName, connection.model(model.modelName, model.schema)]));
+  const models = Object.fromEntries([Order, Product, Category, PaymentProof, OrderMail, PaymentEvent, RefundCase, MediaAsset].map(model => [model.modelName, connection.model(model.modelName, model.schema)]));
   assertOwned();
   for (const model of Object.values(models)) { await model.createCollection(); await model.createIndexes(); }
   return { connection, models,

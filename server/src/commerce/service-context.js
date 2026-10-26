@@ -17,7 +17,7 @@ export function commerceContext({ connection = mongoose.connection, models = { O
     return value;
   }, transaction: callback => commerceTransaction(connection, callback),
   // Only a durable outbox write runs inside a transaction, never SMTP/R2.
-  notify: (kind, order, session, monetary = null) => queueOrderMail(kind, order, session, { model: models.OrderMail, env, monetary }) };
+  notify: (kind, order, session, monetary = null) => queueOrderMail(kind, order, session, { model: models.OrderMail, env, monetary, models }) };
 }
 export async function transactionOrder(OrderModel, id, session) {
   const order = await OrderModel.findById(id).session(session).lean();

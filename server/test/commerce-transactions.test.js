@@ -14,7 +14,7 @@ test('real replica-set commerce transactions and concurrency', { skip: !uri, tim
   const { connection, models } = database;
   t.after(() => database.close());
   let instant = new Date();
-  const env = { ORDER_EMAILS_ENABLED: 'true', ORDER_ALERT_EMAIL: 'owner@example.invalid' };
+  const env = { ORDER_EMAILS_ENABLED: 'true', ORDER_ALERT_EMAIL: 'owner@example.invalid', PUBLIC_SITE_ORIGIN: 'https://quantum.example' };
   const options = { connection, models, env, clock: () => instant };
   const orders = createOrderService(options), payments = createPaymentService(options);
   const expiry = createOrderService({ ...options, env: { ...env, UNPAID_ORDER_EXPIRATION_ENABLED: 'true', UNPAID_ORDER_EXPIRATION_MINUTES: '1' } });

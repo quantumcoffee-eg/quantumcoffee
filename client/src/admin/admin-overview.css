@@ -33,3 +33,8 @@
 .qc-reconciliation-items > li { margin-block: 1rem; }
 .qc-reconciliation p, .qc-reconciliation li { line-height: 1.65; }
 @media (max-width: 560px) { .qc-overview-accounting { grid-template-columns: 1fr; } }
+.qc-operations > p { line-height: 1.8; font-size: .8rem; overflow-wrap: anywhere; }
+.qc-operations-counts { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-block: 1rem; }
+.qc-operations-storage { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-block: 1rem; }
+@media(max-width:650px){.qc-operations-counts,.qc-operations-storage{grid-template-columns:repeat(2,minmax(0,1fr));}}
+.qc-operations-times { grid-template-columns: repeat(2, minmax(0, 1fr)); }

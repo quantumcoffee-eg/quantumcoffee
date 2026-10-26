@@ -1,18 +1,29 @@
 import nodemailer from 'nodemailer';
+import { Socket } from 'node:net';
 
 export function mailConfigured(env = process.env) {
   return Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASSWORD && env.MAIL_FROM && env.PUBLIC_SITE_ORIGIN);
 }
-export function makeMailTransport(env = process.env) {
+export function makeMailTransport(env = process.env, { signal } = {}) {
   if (!mailConfigured(env)) return null;
   const port = Number(env.SMTP_PORT || 587);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid SMTP port.');
-  return nodemailer.createTransport({
+  // A dedicated owned socket lets the order worker enforce an absolute send
+  // deadline, including DNS/handshake/slow DATA. Nodemailer still performs TLS.
+  const socket = signal ? new Socket() : null;
+  const abort = () => socket?.destroy(Object.assign(new Error('SMTP attempt aborted.'), { code: 'ETIMEDOUT' }));
+  if (socket) { socket.on('error', () => {}); signal.addEventListener('abort', abort, { once: true }); }
+  const transport = nodemailer.createTransport({
     host: env.SMTP_HOST, port, secure: env.SMTP_SECURE === 'true' || port === 465,
     auth: { user: env.SMTP_USER, pass: env.SMTP_PASSWORD },
+    requireTLS: true, tls: { minVersion: 'TLSv1.2', rejectUnauthorized: true, servername: env.SMTP_HOST },
+    ...(socket ? { socket } : {}),
     connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 20000,
     disableFileAccess: true, disableUrlAccess: true,
   });
+  if (!socket) return transport;
+  return { sendMail: message => signal.aborted ? Promise.reject(Object.assign(new Error('SMTP attempt aborted.'), { code: 'ETIMEDOUT' })) : transport.sendMail(message),
+    close() { signal.removeEventListener('abort', abort); socket.destroy(); transport.close(); } };
 }
 const safe = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 export function accountMailContent(purpose, link) {

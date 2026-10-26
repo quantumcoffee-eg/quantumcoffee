@@ -3,7 +3,8 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { overviewFixture, adminFixtureResponse, fixtureId } from './overview-fixtures.mjs';
+import { overviewFixture, adminFixtureResponse, fixtureId, operationsFixture } from './overview-fixtures.mjs';
+import { operationsText } from '../../client/src/admin/operations-copy.js';
 import { overviewText, overviewMoney } from '../../client/src/admin/overview-copy.js';
 
 const require = createRequire(import.meta.url);
@@ -15,6 +16,31 @@ const browser = await chromium.launch({
   ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}),
 });
 after(() => browser.close());
+
+for (const lang of ['en','ar']) for (const width of [320,1440]) test(`notification operational visibility: ${lang}, ${width}px`, async t => {
+  let mode = 'loading', release;
+  const p = await pageFor(t, { lang, width, role: 'admin', path: '/admin', apiHandler: (request, u) => {
+    if (u.pathname === '/api/admin/overview/operations') {
+      if (mode === 'loading') return new Promise(resolve => { release = () => resolve({ json: { operations: operationsFixture('disabled') } }); });
+      if (mode === 'error') return { status: 503, json: { error: 'Unavailable' } };
+      return { json: { operations: operationsFixture(mode, true) } };
+    }
+    return adminFixtureResponse(request, u);
+  } });
+  const panel = p.locator('.qc-operations'); await panel.getByRole('status').filter({ hasText: operationsText(lang, 'loading') }).waitFor();
+  release(); await panel.getByText(operationsText(lang, 'disabled'), { exact: true }).waitFor();
+  for (mode of ['ready','unconfigured','disabled']) {
+    await panel.getByRole('button', { name: operationsText(lang, 'refresh'), exact: true }).click();
+    await panel.getByText(operationsText(lang, mode), { exact: true }).waitFor();
+    assert.equal(await panel.getByRole('button').count(), 1, 'refresh only; no replay action');
+    assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  }
+  mode = 'error'; await panel.getByRole('button').click(); await panel.getByRole('alert').waitFor();
+  mode = 'ready'; await panel.getByRole('button').click(); await panel.getByText(operationsText(lang, 'ready'), { exact: true }).waitFor();
+  assert.match(await panel.locator('.qc-operations-counts').textContent(), lang === 'ar' ? /٢/ : /2/);
+  assert.doesNotMatch(await panel.textContent(), /customer@example|smtp\.example|payment-proofs\//);
+  await panel.getByRole('button').focus(); assert.equal(await panel.getByRole('button').evaluate(e => document.activeElement === e), true);
+});
 
 for (const lang of ['en', 'ar']) for (const width of [320, 1440]) test(`ledger accounting and read-only reconciliation: ${lang}, ${width}px`, async t => {
   let reportMode = 'ready', reportCalls = 0;
@@ -92,6 +118,7 @@ async function pageFor(t, { width = 1440, lang = 'en', path = '/about', role = '
       const custom = await apiHandler?.(route.request(), u);
       if (custom) return route.fulfill(custom);
       const json = u.pathname.endsWith('/auth/me') ? { user: role === 'guest' ? null : { role, email: 'browser-test@example.invalid', name: 'Browser fixture' } }
+        : u.pathname === '/api/admin/overview/operations' ? { operations: operationsFixture() }
         : u.pathname === '/api/admin/overview' ? { overview: overviewFixture(u.searchParams.get('range') || '30d') }
         : u.pathname.endsWith('/store/settings') ? { settings: { contact: {} } }
           : u.pathname.endsWith('/commerce/config') ? { checkoutEnabled: false, paymentMethods: [] }
