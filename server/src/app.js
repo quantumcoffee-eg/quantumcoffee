@@ -7,6 +7,7 @@ import mediaRoutes from './routes/media.routes.js';
 import { commerceRoutes, adminOrdersRoutes } from './routes/commerce.routes.js';
 import { paymentRoutes, adminPaymentRoutes } from './routes/payment.routes.js';
 import { databaseReady } from './db/connect.js';
+import { publicStoreRoutes, adminStoreRoutes } from './routes/store.routes.js';
 import { loadUser, requireRole } from './security/session.js';
 
 export function createApp() {
@@ -16,6 +17,9 @@ export function createApp() {
   const origins = new Set((process.env.CLIENT_ORIGIN || 'http://127.0.0.1:5173,http://localhost:5173').split(',').map(x => x.trim()).filter(Boolean));
   app.use(helmet());
   app.use(cors({ origin(origin, callback) { callback(null, !origin || origins.has(origin)); }, credentials: true }));
+  // Bilingual legal policies can exceed ordinary checkout payload sizes.
+  // Keep the larger parser limited to the owner-settings endpoint.
+  app.use('/api/admin/store', express.json({ limit: '512kb', inflate: false }));
   app.use(express.json({ limit: '16kb', inflate: false }));
   app.use('/api', (req, res, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
@@ -36,6 +40,8 @@ export function createApp() {
   app.use('/api/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   app.use('/api/auth', authRoutes);
   app.use('/api/catalog', catalogRoutes);
+  app.use('/api/store', publicStoreRoutes);
+  app.use('/api/admin/store', adminStoreRoutes);
   app.use('/api/admin/catalog', adminCatalogRoutes);
   app.use('/api/admin/media', mediaRoutes);
   app.use('/api/commerce', commerceRoutes);

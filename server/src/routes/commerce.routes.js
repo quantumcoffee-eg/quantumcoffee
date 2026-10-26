@@ -5,16 +5,24 @@ import Product from '../models/Product.js';
 import Order from '../models/Order.js';
 import { imageUrl } from '../media/config.js';
 import { databaseReady } from '../db/connect.js';
+import { loadStoreSettings } from './store.routes.js';
+import { shippingFeeFromSettings, publicStoreSettings } from '../store/settings-values.js';
 import { loadUser, requireRole } from '../security/session.js';
 import { rateLimit } from '../security/rate-limit.js';
 import { queueOrderMailSafely } from '../notifications/order-mail.js';
-import { CommerceError, validateItems, validateCheckout, validateCustomer, shippingAmount, lineTotals, fingerprint, newOrderNumber, statusTransition, phoneNumber, ORDERING_IMPLEMENTED } from '../commerce/checkout.js';
+import { CommerceError, validateItems, validateCheckout, validateCustomer, lineTotals, fingerprint, newOrderNumber, statusTransition, phoneNumber, ORDERING_IMPLEMENTED } from '../commerce/checkout.js';
 
 export const commerceRoutes = Router();
 export const adminOrdersRoutes = Router();
 const run = fn => (req,res,next) => Promise.resolve(fn(req,res,next)).catch(next);
 const db = (_req,res,next) => databaseReady()?next():res.status(503).json({code:'SERVICE_UNAVAILABLE',error:'Order service requires Quantum Coffee MongoDB.'});
 const noCache = (_req,res,next) => {res.set('Cache-Control','no-store');next()};
+async function configuredShipping(governorate) {
+  const result = shippingFeeFromSettings(governorate, await loadStoreSettings());
+  if (result.error === 'INVALID_GOVERNORATE') throw new CommerceError('Select a governorate.', 'INVALID_GOVERNORATE');
+  if (result.error) throw new CommerceError('Shipping rates are not configured yet.', 'SHIPPING_UNAVAILABLE', 503);
+  return result.amount;
+}
 const fail = (error,_req,res,next) => error instanceof CommerceError?res.status(error.status).json({code:error.code,error:error.message}):next(error);
 const validId = v => typeof v==='string' && /^[0-9a-f]{24}$/i.test(v);
 
@@ -30,7 +38,10 @@ const rejectionReason = order => order.paymentState==='rejected' ? [...(order.pa
 const orderSummary = order => ({id:String(order._id),orderNumber:order.orderNumber,createdAt:order.createdAt,fulfillmentState:order.fulfillmentState,paymentMethod:order.paymentMethod,paymentState:order.paymentState,subtotalPiastres:order.subtotalPiastres,shippingPiastres:order.shippingPiastres,totalPiastres:order.totalPiastres,lines:order.lines.map(publicLine),history:(order.history||[]).map(h=>({status:h.status,at:h.at})),paymentProofSubmitted:order.paymentState==='awaiting_verification'||order.paymentState==='paid',paymentRejectionReason:rejectionReason(order),revision:order.revision});
 const adminSummary = order => ({...orderSummary(order),customer:order.customer,userId:order.userId?String(order.userId):null,paymentProofId:order.paymentProofId?String(order.paymentProofId):null,paymentHistory:(order.paymentHistory||[]).map(h=>({state:h.state,at:h.at,reason:h.reason}))});
 commerceRoutes.use(noCache,db,loadUser);
-commerceRoutes.get('/config',(_req,res)=>res.json({checkoutEnabled:ORDERING_IMPLEMENTED && process.env.CHECKOUT_ENABLED==='true',paymentMethods:['cod','instapay','vodafone_cash']}));
+commerceRoutes.get('/config',run(async(_req,res)=>{
+  const settings=await loadStoreSettings();
+  res.json({checkoutEnabled:ORDERING_IMPLEMENTED && process.env.CHECKOUT_ENABLED==='true',paymentMethods:Object.entries(settings.payments).filter(([,v])=>v.enabled).map(([method])=>method),paymentInstructions:publicStoreSettings(settings).payments});
+}));
 commerceRoutes.post('/cart',rateLimit({limit:120}),run(async(req,res)=>{
   if (!Array.isArray(req.body?.items)) throw new CommerceError('Invalid cart.');
   if (!req.body.items.length) return res.json({items:[],subtotalPiastres:0});
@@ -49,7 +60,7 @@ commerceRoutes.post('/cart',rateLimit({limit:120}),run(async(req,res)=>{
 commerceRoutes.post('/quote',rateLimit({limit:100}),run(async(req,res)=>{
   const items=validateItems(req.body?.items);
   const governorate=req.body?.governorate;
-  const shippingPiastres=shippingAmount(governorate);
+  const shippingPiastres=await configuredShipping(governorate);
   const entries=await loadLines(items);
   const {lines,subtotalPiastres}=lineTotals(entries);
   const totalPiastres=subtotalPiastres+shippingPiastres;
@@ -67,7 +78,9 @@ commerceRoutes.post('/checkout',rateLimit({limit:10,windowMs:60*60*1000}),run(as
     await queueOrderMailSafely('placed',existing);
     return res.json({order:orderSummary(existing),recovered:true});
   }
-  const shippingPiastres=shippingAmount(data.customer.governorate);
+  const configured = await loadStoreSettings();
+  if (!configured.payments?.[data.paymentMethod]?.enabled) throw new CommerceError('Selected payment method is not available.', 'PAYMENT_UNAVAILABLE', 503);
+  const shippingPiastres=await configuredShipping(data.customer.governorate);
   let saved;
   try {
     await mongoose.connection.transaction(async session=>{

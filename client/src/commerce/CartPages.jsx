@@ -57,7 +57,7 @@ export function CheckoutPage(){
   useEffect(()=>{if(!items.length||receipt)return;const ctrl=new AbortController();setQuote(null);setError('');api('/commerce/quote',{method:'POST',body:{items,governorate:customer.governorate},signal:ctrl.signal})
     .then(data=>setQuote(data)).catch(e=>{if(!ctrl.signal.aborted)setError(e.message)});return()=>ctrl.abort();},[items,customer.governorate,receipt]);
   const change=key=>e=>setCustomer(old=>({...old,[key]:e.target.value}));
-  async function submit(e){e.preventDefault();if(!config?.checkoutEnabled||!quote||!items.length)return;setError('');setBusy(true);
+  async function submit(e){e.preventDefault();if(!config?.checkoutEnabled||!config?.paymentMethods?.includes(paymentMethod)||!quote||!items.length)return;setError('');setBusy(true);
     try {const response=await api('/commerce/checkout',{method:'POST',body:{items,customer,paymentMethod,checkoutKey}});setReceipt(response.order);clear();}
     catch(e){setError(e.message)}finally{setBusy(false)}
   }
@@ -77,13 +77,13 @@ export function CheckoutPage(){
         <label>{text(ar,'City','المدينة')}<input required maxLength={120} value={customer.city} onChange={change('city')}/></label>
         <label>{text(ar,'Street and building','العنوان بالتفصيل')}<input required maxLength={240} value={customer.street} onChange={change('street')}/></label>
         <label className="qc-full">{text(ar,'Additional delivery notes (optional)','ملاحظات إضافية (اختياري)')}<textarea maxLength={500} value={customer.details} onChange={change('details')}/></label>
-        <h2>{text(ar,'Payment Method','طريقة الدفع')}</h2><div className="qc-payments qc-full">{methods.map(method=><label key={method}><input type="radio" name="payment" checked={paymentMethod===method} onChange={()=>setPaymentMethod(method)}/>{methodName[method]}</label>)}</div>
+        <h2>{text(ar,'Payment Method','طريقة الدفع')}</h2><div className="qc-payments qc-full">{methods.map(method=><label key={method}><input type="radio" name="payment" checked={paymentMethod===method} disabled={!config?.paymentMethods?.includes(method)} onChange={()=>setPaymentMethod(method)}/>{methodName[method]} {!config?.paymentMethods?.includes(method)?(ar?'(قريباً)':'(not configured)'):''}</label>)}</div>
         {paymentMethod!=='cod'&&<p className="qc-commerce-muted qc-full">{text(ar,'Transfer instructions and secure payment-proof uploads are not active yet. Do not transfer before receiving an official order reference and verified instructions.','تعليمات التحويل ورفع إثبات الدفع غير مفعلة حتى الآن. لا تحول قبل تأكيد التعليمات الرسمية.')}</p>}
       </section>
       <aside className="qc-checkout-summary"><h2>{text(ar,'Order Summary','ملخص الطلب')}</h2>{quote?.items.map(line=><div className="qc-order-line" key={`${line.productId}:${line.packGrams}:${line.grindCode}`}><span>{translated(line.name,lang)} ({line.packGrams} g · {preparationName(line.grindCode,lang)}) × {line.quantity}</span><strong>{money(line.lineTotalPiastres)}</strong></div>)}
       {quote&&<><div className="qc-order-line"><span>{text(ar,'Subtotal','المجموع')}</span><strong>{money(quote.subtotalPiastres)}</strong></div><div className="qc-order-line"><span>{text(ar,'Delivery','الشحن')}</span><strong>{money(quote.shippingPiastres)}</strong></div><div className="qc-order-line"><strong>{text(ar,'Total','الإجمالي')}</strong><strong>{money(quote.totalPiastres)}</strong></div></>}
       {!config?.checkoutEnabled&&<p className="qc-commerce-muted">{text(ar,'Ordering will open after payment and shipping details are confirmed.','الطلبات ستفتح بعد تأكيد الشحن ووسائل الدفع.')}</p>}
-      <ErrorLine error={error}/><button disabled={busy||!config?.checkoutEnabled||!quote} className="button button-dark">{busy?text(ar,'Placing order…','جار إرسال الطلب…'):text(ar,'Place Order','تأكيد الطلب')}</button>
+      <ErrorLine error={error}/><button disabled={busy||!config?.checkoutEnabled||!config?.paymentMethods?.includes(paymentMethod)||!quote} className="button button-dark">{busy?text(ar,'Placing order…','جار إرسال الطلب…'):text(ar,'Place Order','تأكيد الطلب')}</button>
       <button type="button" className="qc-text-control" onClick={()=>navigate(url('/cart'))}>{text(ar,'Edit Cart','تعديل السلة')}</button>
       </aside>
     </form>}

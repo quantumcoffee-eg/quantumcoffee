@@ -8,3 +8,6 @@
 /* Flexible catalog size editor */
 .qc-size-admin { padding:1rem; margin:1rem 0; border:1px solid #74563a55; background:#20171012; }
 .qc-size-admin .qc-admin-row {margin-bottom:.7rem;}
+
+/* Owner-managed launch settings */
+.qc-admin-settings-policy{display:grid;gap:.7rem;border-top:1px solid #74563a66;padding-top:1rem}.qc-admin-settings-policy h4{font-size:1.15rem;color:#E7D0B9}.qc-admin-settings-policy textarea{line-height:1.6}.qc-admin-settings-policy .qc-admin-two{margin-top:.3rem}

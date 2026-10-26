@@ -6,6 +6,7 @@ import { useSession } from '../lib/session.jsx';
 import './catalog-admin.css';
 import MediaEditor from './MediaEditor.jsx';
 import AdminOrders from './AdminOrders.jsx';
+import StoreSettingsAdmin from './StoreSettingsAdmin.jsx';
 import { PREPARATIONS } from '../lib/grinds.js';
 
 const blankCategory = () => ({ name:{en:'',ar:''}, slug:'', description:{en:'',ar:''},sortOrder:0,active:false });
@@ -30,7 +31,7 @@ export default function CatalogAdmin() {
   const { lang, url } = useLocale();
   const session = useSession();
   const [query,setQuery]=useSearchParams();
-  const tab = ['orders','products','categories'].includes(query.get('tab')) ? query.get('tab') : 'orders';
+  const tab = ['orders','products','categories','settings'].includes(query.get('tab')) ? query.get('tab') : 'orders';
   const ar = lang === 'ar';
   const [categories,setCategories]=useState([]),[products,setProducts]=useState([]),[pagination,setPagination]=useState({page:1,pages:0,total:0});
   const [catDraft,setCatDraft]=useState(null),[prodDraft,setProdDraft]=useState(null);
@@ -43,7 +44,7 @@ export default function CatalogAdmin() {
       setCategories(cats.categories);setProducts(prods.items);setPagination(prods.pagination);
     } catch(e){setError(e.message)} finally {setLoading(false)}
   },[page]);
-  useEffect(()=>{if(tab!=='orders')void load()},[load,tab]);
+  useEffect(()=>{if(tab==='products'||tab==='categories')void load()},[load,tab]);
   const showTab = next => {setQuery({tab:next});setError('');setNotice('');setCatDraft(null);setProdDraft(null)};
   async function submitCategory(e){
     e.preventDefault();setError('');setNotice('');setBusy(true);
@@ -84,14 +85,15 @@ export default function CatalogAdmin() {
     grams:String(s.grams),price:fromPiastres(s.pricePiastres),compareAt:fromPiastres(s.compareAtPiastres),grindOptions:s.grindOptions||[]
   }))});
   const editSize = (index,change) => setProdDraft(p=>({...p,sizes:p.sizes.map((s,i)=>i===index?{...s,...change}:s)}));
-  const switchTab = t => <button key={t} type="button" className={tab===t?'selected':''} onClick={()=>showTab(t)}>{ar?({orders:'الطلبات',products:'المنتجات',categories:'الفئات'}[t]):t[0].toUpperCase()+t.slice(1)}</button>;
+  const switchTab = t => <button key={t} type="button" className={tab===t?'selected':''} onClick={()=>showTab(t)}>{ar?({orders:'الطلبات',products:'المنتجات',categories:'الفئات',settings:'الإعدادات'}[t]):t[0].toUpperCase()+t.slice(1)}</button>;
   return <main className="qc-admin">
     <div className="qc-admin-head"><div><p className="kicker">QUANTUM COFFEE / ADMIN</p><h1>{ar?'لوحة الإدارة':'Store Administration'}</h1><p>{session.user?.email}</p></div><button className="qc-admin-secondary" type="button" onClick={async()=>{try{await session.logout();window.location.assign(url('/login'))}catch(e){setError(e.message)}}}>{ar?'خروج':'Sign out'}</button></div>
-    <nav className="qc-admin-tabs" aria-label="Admin sections">{['orders','products','categories'].map(switchTab)}</nav>
+    <nav className="qc-admin-tabs" aria-label="Admin sections">{['orders','products','categories','settings'].map(switchTab)}</nav>
     {error&&<p role="alert" className="qc-admin-error">{error} <button type="button" onClick={load}>{ar?'تحديث':'Reload'}</button></p>}
     {notice&&<p role="status" className="qc-admin-notice">{notice}</p>}
     {loading&&<p role="status">{ar?'جار التحميل…':'Loading catalog…'}</p>}
     {tab==='orders'&&<AdminOrders/>}
+    {tab==='settings'&&<StoreSettingsAdmin/>}
     {tab==='categories'&&<section className="qc-admin-panel">
       <div className="qc-admin-row"><h2>{ar?'الفئات':'Categories'}</h2><button className="qc-admin-primary" type="button" onClick={()=>setCatDraft(blankCategory())}>{ar?'إضافة فئة':'Add category'}</button></div>
       {catDraft&&<form onSubmit={submitCategory} className="qc-admin-form">

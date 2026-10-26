@@ -1,5 +1,5 @@
 import CatalogAdmin from '../admin/CatalogAdmin.jsx';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ShieldCheck, UserRound, ArrowLeft } from 'lucide-react';
 import { useLocale } from '../lib/i18n.jsx';
@@ -108,6 +108,18 @@ export function EmailRequestPage({ verification = false }) {
     </form>}
   </Page>;
 }
-export function LegalPage() { const { t } = useLocale(); return <Page label="INFORMATION" title={t('legalTitle')}><ShieldCheck size={36}/><p>{t('legalBody')}</p></Page>; }
+const LEGAL_ROUTES = {'shipping-policy':['shipping','shipping'],'refund-policy':['refunds','refund'],'privacy-policy':['privacy','privacy'],'terms':['terms','terms']};
+export function LegalPage() {
+  const {t,lang}=useLocale();const {pathname}=useLocation();
+  const route=pathname.split('/').filter(Boolean).at(-1);
+  const [key,titleKey]=LEGAL_ROUTES[route]||['terms','terms'];
+  const [content,setContent]=useState('');
+  useEffect(()=>{const ctrl=new AbortController();setContent('');
+    api('/store/settings',{signal:ctrl.signal}).then(r=>setContent(r.settings?.policies?.[key]?.[lang]||''))
+      .catch(()=>{});return()=>ctrl.abort();
+  },[key,lang]);
+  return <Page label="INFORMATION" title={t(titleKey)}><ShieldCheck size={36}/>
+    <p style={{whiteSpace:'pre-wrap'}}>{content||t('legalBody')}</p></Page>;
+}
 export function AdminPage() { return <CatalogAdmin />; }
 export function NotFound() { const { t } = useLocale(); return <Page label="404" title={t('notFound')}><p>{t('comingSoon')}</p></Page>; }
