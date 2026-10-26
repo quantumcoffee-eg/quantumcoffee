@@ -1,4 +1,5 @@
 import { orderEmailIssues } from '../notifications/order-mail-values.js';
+import { expirationPolicy } from '../commerce/expiration-policy.js';
 
 // Production safety checks. This project must never silently attach to an
 // existing client's database or accept cross-site auth on an unapproved origin.
@@ -17,6 +18,10 @@ function isHttpsOrigin(value) {
 export function productionConfigIssues(env = process.env) {
   if (env.NODE_ENV !== 'production') return [];
   const issues = [];
+  try {
+    const policy = expirationPolicy(env);
+    if (policy.enabled) issues.push('UNPAID_ORDER_EXPIRATION_ENABLED must remain false until the owner approves activation and the payment window.');
+  } catch(error) { issues.push(error.message); }
   if (env.MONGODB_DB_NAME !== EXPECTED_DATABASE) {
     issues.push(`MONGODB_DB_NAME must be ${EXPECTED_DATABASE} (separate Quantum Coffee database).`);
   }

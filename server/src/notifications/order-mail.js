@@ -8,11 +8,11 @@ const MAX_ATTEMPTS=5;
 const MAX_PER_TICK=5;
 const TWO_MINUTES=2*60*1000;
 const queueEnabled = (env=process.env) => env.ORDER_EMAILS_ENABLED==='true';
-export async function queueOrderMail(kind,order,session) {
-  if (!queueEnabled()) return;
-  const docs=notificationDocuments(kind,order);
+export async function queueOrderMail(kind,order,session,{model=OrderMail,env=process.env}={}) {
+  if (!queueEnabled(env)) return;
+  const docs=notificationDocuments(kind,order,env);
   if (!docs.length) return;
-  await OrderMail.bulkWrite(docs.map(item=>({updateOne:{filter:{dedupeKey:item.dedupeKey},update:{$setOnInsert:item},upsert:true}})), {ordered:false,...(session?{session}:{})});
+  await model.bulkWrite(docs.map(item=>({updateOne:{filter:{dedupeKey:item.dedupeKey},update:{$setOnInsert:item},upsert:true}})), {ordered:true,...(session?{session}:{})});
 }
 // Queuing errors are logged, but must not turn a committed payment/fulfillment
 // operation into a misleading HTTP error that encourages customers to retry.

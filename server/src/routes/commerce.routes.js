@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import mongoose from 'mongoose';
 import Category from '../models/Category.js';
 import Product from '../models/Product.js';
 import Order from '../models/Order.js';
@@ -9,9 +8,10 @@ import { loadStoreSettings } from './store.routes.js';
 import { shippingFeeFromSettings, publicStoreSettings } from '../store/settings-values.js';
 import { loadUser, requireRole } from '../security/session.js';
 import { rateLimit } from '../security/rate-limit.js';
-import { queueOrderMailSafely } from '../notifications/order-mail.js';
-import { CommerceError, validateItems, validateCheckout, validateCustomer, lineTotals, fingerprint, newOrderNumber, statusTransition, phoneNumber, ORDERING_IMPLEMENTED } from '../commerce/checkout.js';
+import { CommerceError, validateItems, validateCheckout, lineTotals, phoneNumber, ORDERING_IMPLEMENTED } from '../commerce/checkout.js';
 import { orderQueueFilter, OverviewInputError } from '../admin/overview-values.js';
+import { orderService } from '../commerce/order-service.js';
+import { loadCartLines } from '../commerce/inventory-service.js';
 
 export const commerceRoutes = Router();
 export const adminOrdersRoutes = Router();
@@ -27,17 +27,16 @@ async function configuredShipping(governorate) {
 const fail = (error,_req,res,next) => error instanceof CommerceError?res.status(error.status).json({code:error.code,error:error.message}):next(error);
 const validId = v => typeof v==='string' && /^[0-9a-f]{24}$/i.test(v);
 
-async function loadLines(items, session) {
-  const products = await Product.find({_id:{$in:items.map(x=>x.productId)}}).session(session||null).lean();
-  const categories = await Category.find({_id:{$in:products.map(x=>x.categoryId)},active:true}).select('_id').session(session||null).lean();
-  const allowed = new Set(categories.map(c=>String(c._id)));
-  const lookup = new Map(products.filter(p=>allowed.has(String(p.categoryId))).map(p=>[String(p._id),p]));
-  return items.map(item=>({product:lookup.get(item.productId),quantity:item.quantity,sizeGrams:item.sizeGrams,grindCode:item.grindCode}));
-}
+const loadLines = items => loadCartLines(items, { Product, Category });
 const publicLine = line=>({productId:String(line.productId),slug:line.slug,name:line.name,imageUrl:imageUrl(line.imageKey),grindCode:line.grindCode,packGrams:line.packGrams,quantity:line.quantity,unitPricePiastres:line.unitPricePiastres,lineTotalPiastres:line.lineTotalPiastres});
 const rejectionReason = order => order.paymentState==='rejected' ? [...(order.paymentHistory||[])].reverse().find(entry=>entry.state==='rejected')?.reason || '' : '';
 const orderSummary = order => ({id:String(order._id),orderNumber:order.orderNumber,createdAt:order.createdAt,fulfillmentState:order.fulfillmentState,paymentMethod:order.paymentMethod,paymentState:order.paymentState,subtotalPiastres:order.subtotalPiastres,shippingPiastres:order.shippingPiastres,totalPiastres:order.totalPiastres,lines:order.lines.map(publicLine),history:(order.history||[]).map(h=>({status:h.status,at:h.at})),paymentProofSubmitted:order.paymentState==='awaiting_verification'||order.paymentState==='paid',paymentRejectionReason:rejectionReason(order),revision:order.revision});
 const adminSummary = order => ({...orderSummary(order),customer:order.customer,userId:order.userId?String(order.userId):null,paymentProofId:order.paymentProofId?String(order.paymentProofId):null,paymentHistory:(order.paymentHistory||[]).map(h=>({state:h.state,at:h.at,reason:h.reason}))});
+// Fail closed before database/session work, even when the environment flag is true.
+commerceRoutes.post('/checkout',noCache,(_req,res,next)=>{
+  if(!ORDERING_IMPLEMENTED || process.env.CHECKOUT_ENABLED!=='true')return res.status(503).json({code:'CHECKOUT_DISABLED',error:'Checkout is not open yet.'});
+  next();
+});
 commerceRoutes.use(noCache,db,loadUser);
 commerceRoutes.get('/config',run(async(_req,res)=>{
   const settings=await loadStoreSettings();
@@ -69,48 +68,13 @@ commerceRoutes.post('/quote',rateLimit({limit:100}),run(async(req,res)=>{
   res.json({items:lines.map(publicLine),subtotalPiastres,shippingPiastres,totalPiastres,checkoutEnabled:ORDERING_IMPLEMENTED && process.env.CHECKOUT_ENABLED==='true'});
 }));
 commerceRoutes.post('/checkout',rateLimit({limit:10,windowMs:60*60*1000}),run(async(req,res)=>{
-  if(!ORDERING_IMPLEMENTED || process.env.CHECKOUT_ENABLED!=='true') return res.status(503).json({code:'CHECKOUT_DISABLED',error:'Checkout is not open yet.'});
   if(req.authUser?.role==='admin')return res.status(403).json({code:'FORBIDDEN',error:'Admins cannot place storefront orders.'});
   const data=validateCheckout(req.body);
-  const requestFingerprint=fingerprint(data);
-  const existing=await Order.findOne({checkoutKey:data.checkoutKey}).lean();
-  if(existing){
-    if(existing.requestFingerprint!==requestFingerprint)throw new CommerceError('Checkout reference was already used.', 'CHECKOUT_CONFLICT', 409);
-    await queueOrderMailSafely('placed',existing);
-    return res.json({order:orderSummary(existing),recovered:true});
-  }
-  const configured = await loadStoreSettings();
-  if (!configured.payments?.[data.paymentMethod]?.enabled) throw new CommerceError('Selected payment method is not available.', 'PAYMENT_UNAVAILABLE', 503);
-  const shippingPiastres=await configuredShipping(data.customer.governorate);
-  let saved;
-  try {
-    await mongoose.connection.transaction(async session=>{
-      const prior=await Order.findOne({checkoutKey:data.checkoutKey}).session(session).lean();
-      if(prior){if(prior.requestFingerprint!==requestFingerprint)throw new CommerceError('Checkout reference was already used.','CHECKOUT_CONFLICT',409);saved=prior;return;}
-      const entries=await loadLines(data.items,session);
-      const {lines,subtotalPiastres}=lineTotals(entries);
-      const totalPiastres=subtotalPiastres+shippingPiastres;
-      if (!Number.isSafeInteger(totalPiastres)||totalPiastres>1_000_000_000)throw new CommerceError('Order total exceeds the allowed limit.');
-      for(const item of lines){
-        const updated=await Product.updateOne({
-          _id:item.productId,status:'published',stockQuantity:{$gte:item.quantity},
-          sizes:{$elemMatch:{grams:item.packGrams,grindOptions:{$elemMatch:{code:item.grindCode,stockQuantity:{$gte:item.quantity}}}}}
-        },{$inc:{stockQuantity:-item.quantity,'sizes.$[s].grindOptions.$[g].stockQuantity':-item.quantity,revision:1}},
-        {session,arrayFilters:[{'s.grams':item.packGrams},{'g.code':item.grindCode,'g.stockQuantity':{$gte:item.quantity}}]});
-        if(updated.modifiedCount!==1)throw new CommerceError('Stock changed during checkout. Refresh the cart.','OUT_OF_STOCK',409);
-      }
-      const paymentState=data.paymentMethod==='cod'?'unpaid':'awaiting_transfer';
-      const [order]=await Order.create([{orderNumber:newOrderNumber(),checkoutKey:data.checkoutKey,requestFingerprint,
-        userId:req.authUser?.role==='customer'?req.authUser._id:null,customer:data.customer,lines,subtotalPiastres,shippingPiastres,totalPiastres,
-        paymentMethod:data.paymentMethod,paymentState,fulfillmentState:'received',history:[{status:'received',at:new Date()}]}],{session});
-      saved=order.toObject();
-    });
-  }catch(error){
-    if(error?.code===11000){const prior=await Order.findOne({checkoutKey:data.checkoutKey}).lean();if(prior&&prior.requestFingerprint===requestFingerprint){await queueOrderMailSafely('placed',prior);return res.json({order:orderSummary(prior),recovered:true});}}
-    throw error;
-  }
-  await queueOrderMailSafely('placed',saved);
-  res.status(201).json({order:orderSummary(saved)});
+  const configured=await loadStoreSettings();
+  const shipping=shippingFeeFromSettings(data.customer.governorate,configured);
+  const result=await orderService.checkout(data,{userId:req.authUser?.role==='customer'?req.authUser._id:null,
+    shippingPiastres:shipping.error?undefined:shipping.amount,paymentEnabled:Boolean(configured.payments?.[data.paymentMethod]?.enabled)});
+  res.status(result.created?201:200).json({order:orderSummary(result.order),...(result.recovered?{recovered:true}:{})});
 }));
 commerceRoutes.post('/track',rateLimit({limit:8,windowMs:15*60*1000}),run(async(req,res)=>{
   const number=req.body?.orderNumber;
@@ -150,30 +114,7 @@ adminOrdersRoutes.get('/:id',run(async(req,res)=>{
 adminOrdersRoutes.patch('/:id/status',run(async(req,res)=>{
   if(!validId(req.params.id))return res.status(404).json({code:'NOT_FOUND',error:'Order not found.'});
   if(!req.body||Object.keys(req.body).some(k=>!['revision','status'].includes(k))||!Number.isSafeInteger(req.body.revision)||req.body.revision<0)throw new CommerceError('Revision and status are required.');
-  const order=await Order.findById(req.params.id).lean();
-  if(!order)return res.status(404).json({code:'NOT_FOUND',error:'Order not found.'});
-  if(order.revision!==req.body.revision)throw new CommerceError('Order changed. Reload first.','EDIT_CONFLICT',409);
-  const next=statusTransition(order.fulfillmentState,req.body.status);
-  if(['packing','shipped'].includes(next)&&order.paymentMethod!=='cod'&&order.paymentState!=='paid')throw new CommerceError('Digital payments must be verified before fulfillment.','PAYMENT_REQUIRED',409);
-  if(next==='cancelled'&&order.paymentState==='paid')throw new CommerceError('Paid orders require a separate refund procedure.','REFUND_REQUIRED',409);
-  const now=new Date();
-  let updated;
-  if(next==='cancelled'){
-    await mongoose.connection.transaction(async session=>{
-      updated=await Order.findOneAndUpdate({_id:order._id,revision:order.revision},{$set:{fulfillmentState:next},$inc:{revision:1},$push:{history:{status:next,at:now,by:req.authUser._id}}},{new:true,session,runValidators:true});
-      if(!updated)throw new CommerceError('Order changed. Reload first.','EDIT_CONFLICT',409);
-      for(const line of order.lines){
-        const restored=await Product.updateOne({_id:line.productId,sizes:{$elemMatch:{grams:line.packGrams,'grindOptions.code':line.grindCode}}},
-          {$inc:{stockQuantity:line.quantity,'sizes.$[s].grindOptions.$[g].stockQuantity':line.quantity,revision:1}},
-          {session,arrayFilters:[{'s.grams':line.packGrams},{'g.code':line.grindCode}]});
-        if(restored.modifiedCount!==1)throw new CommerceError('Could not safely restore variant stock.','RESTOCK_FAILED',409);
-      }
-    });
-  }else{
-    updated=await Order.findOneAndUpdate({_id:order._id,revision:order.revision},{$set:{fulfillmentState:next},$inc:{revision:1},$push:{history:{status:next,at:now,by:req.authUser._id}}},{new:true,runValidators:true});
-    if(!updated)throw new CommerceError('Order changed. Reload first.','EDIT_CONFLICT',409);
-  }
-  await queueOrderMailSafely('fulfillment',updated.toObject());
-  res.json({order:adminSummary(updated.toObject())});
+  const result=await orderService.transitionOrder({id:req.params.id,revision:req.body.revision,status:req.body.status,by:req.authUser._id});
+  res.json({order:adminSummary(result.order)});
 }));
 adminOrdersRoutes.use(fail);

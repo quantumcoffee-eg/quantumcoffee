@@ -7,6 +7,7 @@ import { databaseReady } from '../db/connect.js';
 import MediaAsset from '../models/MediaAsset.js';
 import { imageUrl, checkVerifiedKeys } from '../media/config.js';
 import { loadUser, requireRole } from '../security/session.js';
+import { saveProductAtRevision } from '../commerce/inventory-service.js';
 
 export const catalogRoutes = Router();
 export const adminCatalogRoutes = Router();
@@ -147,7 +148,7 @@ adminCatalogRoutes.patch('/products/:id', asyncRoute(async (req,res,next)=> {
     const expected = new Set(used.flatMap(order=>order.lines.filter(line=>String(line.productId)===String(original._id)).map(line=>`${line.packGrams}:${line.grindCode}`)));
     for(const identity of expected){const [grams,grind]=identity.split(':');if(!values.sizes.some(s=>s.grams===Number(grams)&&s.grindOptions.some(g=>g.code===grind)))return res.status(409).json({error:'Cannot remove a size/preparation referenced by an existing order.',code:'VARIANT_IN_USE'});}
     if (!(await Category.exists({_id:values.categoryId}))) return res.status(400).json({error:'Category not found.',code:'INVALID_CATEGORY'});
-    const updated=await Product.findOneAndUpdate({_id:original._id,revision:body.revision},{$set:{name:values.name,description:values.description,categoryId:values.categoryId,pricePiastres:values.pricePiastres,compareAtPiastres:values.compareAtPiastres,stockQuantity:values.stockQuantity,sizes:values.sizes,featured:values.featured,status:values.status},$unset:{packGrams:"",grindOptions:""},$inc:{revision:1}},{new:true,runValidators:true});
+    const updated=await saveProductAtRevision(Product,{id:original._id,revision:body.revision,values});
     if (!updated) return res.status(409).json({error:'Product was updated elsewhere. Reload.',code:'EDIT_CONFLICT'});
     res.json({product:updated});
   } catch(error) { dbError(error,next,res); }

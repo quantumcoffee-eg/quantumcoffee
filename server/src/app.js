@@ -10,6 +10,7 @@ import { databaseReady } from './db/connect.js';
 import { publicStoreRoutes, adminStoreRoutes } from './routes/store.routes.js';
 import { loadUser, requireRole } from './security/session.js';
 import overviewRoutes from './routes/overview.routes.js';
+import { databaseCommerceError } from './commerce/transactions.js';
 
 export function createApp() {
   const app = express();
@@ -55,7 +56,10 @@ export function createApp() {
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.', code: 'NOT_FOUND' }));
   app.use((error, _req, res, _next) => {
     if (error?.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON.', code: 'INVALID_JSON' });
-    console.error('API error:', error?.message || error);
+    const identifier = typeof error?.code === 'number' ? error.code : /^[A-Za-z0-9_]{1,60}$/.test(error?.name || '') ? error.name : 'UNEXPECTED_ERROR';
+    console.error('API error:', identifier);
+    const safe = databaseCommerceError(error);
+    if (safe !== error) return res.status(safe.status).json({ error: safe.message, code: safe.code });
     res.status(500).json({ error: 'Internal server error.', code: 'INTERNAL_ERROR' });
   });
   return app;
