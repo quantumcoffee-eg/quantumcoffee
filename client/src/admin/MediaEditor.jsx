@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../lib/api.js';
+import { mergeMediaIntoDraft } from './media-draft.mjs';
 
 const MAX = 5 * 1024 * 1024;
 const TYPES = ['image/jpeg','image/png','image/webp'];
@@ -13,7 +14,8 @@ export default function MediaEditor({kind,record,onChange,onRefresh}) {
     const body=isProduct?{revision:record.revision,imageKeys:nextKeys}:{revision:record.revision,imageKey:nextKeys[0]||null};
     const response=await api(route,{method:'PATCH',body});
     const updated=isProduct?response.product:response.category;
-    onChange(updated);await onRefresh();
+    onChange(draft => mergeMediaIntoDraft(draft, updated, kind));
+    await onRefresh();
   };
   const upload=async(file)=>{
     if(!file)return;

@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useMemo } from 'react';
+import { createContext, useContext, useLayoutEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
+import { localizedPath } from './navigation-values.mjs';
 const English = {
  home:'Home',shop:'Shop',about:'About Us',track:'Track Order',orders:'My Orders',account:'My Account',login:'Login',cart:'Cart',admin:'Admin Dashboard',signout:'Sign out',
  announcement:'WHERE COFFEE MEETS CURIOSITY ✦ QUANTUM COFFEE ✦', eyebrow:'COFFEE, REIMAGINED', heroTitleA:'Beyond the', heroTitleB:'Ordinary.', heroText:'An experience inspired by coffee, curiosity, and the laws of the universe.', explore:'Explore Our Coffee',story:'Discover the Story',scroll:'SCROLL TO EXPLORE',
@@ -19,12 +20,12 @@ const Arabic = {
 };
 const Context=createContext(null);
 export function LocaleProvider({children}) {
- const {pathname}=useLocation(); const lang=pathname==='/ar'||pathname.startsWith('/ar/')?'ar':'en';
+ const {pathname,search,hash}=useLocation(); const lang=pathname==='/ar'||pathname.startsWith('/ar/')?'ar':'en';
  const value=useMemo(()=>({lang,dir:lang==='ar'?'rtl':'ltr',t:key=>(lang==='ar'?Arabic:English)[key]||key,
-   url:(path='/')=>(lang==='ar'?'/ar':'')+(path==='/'?'':path),
-   otherUrl:()=>{const path=pathname.replace(/^\/ar(?=\/|$)/,'')||'/';return lang==='ar'?path:'/ar'+(path==='/'?'':path)}
- }),[lang,pathname]);
- useEffect(()=>{document.documentElement.lang=lang;document.documentElement.dir=value.dir;},[lang,value.dir]);
+   url:(path='/')=>localizedPath(path,'','',lang),
+   otherUrl:()=>localizedPath(pathname,search,hash,lang==='ar'?'en':'ar')
+ }),[lang,pathname,search,hash]);
+ useLayoutEffect(()=>{document.documentElement.lang=lang;document.documentElement.dir=value.dir;},[lang,value.dir]);
  return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 export const useLocale=()=>useContext(Context);

@@ -10,6 +10,7 @@ import { AboutPage, AccountPage, AuthPage, LegalPage, AdminPage, NotFound, Verif
 import { CartProvider } from './commerce/CartProvider.jsx';
 import { CartPage, CheckoutPage, OrdersPage, TrackPage } from './commerce/CartPages.jsx';
 import SeoRouter from './seo/SeoRouter.jsx';
+import NavigationEffects from './components/NavigationEffects.jsx';
 
 function Guard({ role, children }) {
   const { url, t } = useLocale();
@@ -21,7 +22,7 @@ function Guard({ role, children }) {
   return children;
 }
 function Layout() {
-  return <SeoRouter><Header/><Routes>
+  return <SeoRouter><NavigationEffects/><Header/><Routes>
     <Route index element={<HomePage/>}/>
     <Route path="shop" element={<ShopPage/>}/>
     <Route path="products/:slug" element={<ProductPage/>}/>
