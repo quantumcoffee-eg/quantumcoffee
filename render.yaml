@@ -1,10 +1,12 @@
-# QUANTUM COFFEE ONLY. A blueprint is inert until explicitly imported into a
-# dedicated Render workspace. DO NOT import it into the Tap & Wrap workspace.
+# Quantum Coffee ONLY. Import this blueprint only into Quantum Coffee's Render account.
+# Requires explicit billing approval before creating the paid Starter web service.
 services:
   - type: web
     name: quantum-coffee-api
+    repo: https://github.com/quantumcoffee-eg/quantumcoffee
     runtime: node
     plan: starter
+    region: frankfurt
     rootDir: server
     branch: main
     buildCommand: npm ci
@@ -17,6 +19,10 @@ services:
       - key: MONGODB_DB_NAME
         value: quantumcoffee_production
       - key: REGISTRATION_ENABLED
+        value: 'false'
+      - key: CHECKOUT_ENABLED
+        value: 'false'
+      - key: ORDER_EMAILS_ENABLED
         value: 'false'
       - key: ALLOW_ADMIN_BOOTSTRAP
         value: 'false'

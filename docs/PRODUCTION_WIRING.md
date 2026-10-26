@@ -1,115 +1,63 @@
-# Quantum Coffee — production wiring checklist (no staging)
+# Quantum Coffee — deployment and prelaunch readiness (26 October 2026)
 
-**Scope:** This document prepares the production connections. It does NOT mean the
-store is ready to accept orders. Checkout, payments, catalog administration,
-private R2 proofs, Meta tracking, and email workflows are not implemented yet.
+**Current state:** Quantum Coffee's owner-controlled repository is `quantumcoffee-eg/quantumcoffee` (`main`). The owner-owned free MongoDB Atlas project (`quantumcoffee-production`, cluster `qc-prod`) has been accessed locally, the admin was bootstrapped, and the initial Coffee Blends category and three product drafts were seeded. No production API/frontend deployment or live R2 upload has been verified.
 
-## Resource isolation — non-negotiable
+**Do NOT use connected ChatGPT Render, Cloudflare, or Atlas actions for this project:** those connections may point to Tap & Wrap. All Quantum Coffee resources must be accessed from the owner's own accounts and project IDs. Never copy or send any `.env` file, Atlas URI, SMTP credential, or R2 secret.
 
-Do not reuse, connect to, or change Tap & Wrap's Cloudflare Pages/Workers, R2,
-Render service/workspace, MongoDB project/cluster/database users, or credentials.
-Create separate Quantum Coffee resources, even if you use the same provider login.
-Name resources `quantum-coffee-*` wherever possible. Prefer separate Atlas
-project and cluster, with database-scoped least-privilege credentials.
+## Current safety state
 
-## 1. GitHub
+- `CHECKOUT_ENABLED=false`, `REGISTRATION_ENABLED=false`, and `ORDER_EMAILS_ENABLED=false` by default.
+- The source still contains `ORDERING_IMPLEMENTED=false`; there is no real order acceptance.
+- Indexing is intentionally blocked by `client/index.html` (`noindex,nofollow`) while catalog, policies, domain and SEO prerendering are incomplete.
+- Category `coffee-blends` is hidden, and `black-hole`, `worm-hole`, `cosmic-dust` are unpublished drafts. Owner must approve final preparations, images, descriptions and stock before publication.
+- MongoDB has no confirmed restore plan. Avoid destructive operations and take an encrypted manual export before consequential changes.
 
-Repository: `youssefkhaled222/quantum-coffee`. It was empty when last inspected.
-The source of truth is the approved project on your local machine. Copy this
-patch there, verify it, then commit and push from that local clone. Never push
-server/.env, secrets, exports, or payment proof images.
+## Code verification — no billing required
 
-## 2. Domain + DNS (when domain is purchased)
+From the repository root:
 
-- Choose canonical public origin: `https://your-domain.example` or `https://www.your-domain.example`.
-- Create `api.your-domain.example` as a Render custom domain.
-- Configure redirects between apex and www, and HTTPS certificates on both.
-- Use separate Quantum Coffee DNS zone and project entries.
-- Browser cookies require the public site and API to be **same-site**; do not
-  expect cross-site cookie auth between a `pages.dev` domain and `onrender.com`.
+```powershell
+node scripts/prelaunch-check.mjs
+cd server; npm.cmd test; npm.cmd audit
+cd ..\client; npm.cmd run lint; npm.cmd run build
+```
 
-## 3. Render — separate Starter web service
+The prelaunch script is **offline and read-only**. It checks code/configuration guardrails only, not a live deployment or actual MongoDB data. Do not interpret a green result as permission to launch.
 
-- Use `render.yaml` **only in the new Quantum Coffee Render workspace**.
-  It sets `plan: starter`, `rootDir: server`, `npm ci`, `npm start`,
-  `/api/ready` health-check, and disables automatic deploys.
-- Supply `MONGODB_URI`, `PUBLIC_SITE_ORIGIN`, and `CLIENT_ORIGIN` in the new
-  service's secrets / Blueprint prompts.
-- Required production settings:
-  - `NODE_ENV=production`
-  - `MONGODB_DB_NAME=quantumcoffee_production`
-  - `MONGODB_URI=<new dedicated Atlas URI>`
-  - `PUBLIC_SITE_ORIGIN=https://your-domain.example`
-  - `CLIENT_ORIGIN=https://your-domain.example` (add www only if used)
-  - `REGISTRATION_ENABLED=false`
-  - `ALLOW_ADMIN_BOOTSTRAP=false`
-- Do not copy Tap & Wrap's environment group.
-- `GET /api/health` is liveness. `GET /api/ready` returns 503 if DB is down,
-  preventing a disconnected application from being marked ready.
-- Production boot fails fast if mandatory settings are invalid or Atlas fails.
+## Render — owner's account, when approved
 
-## 4. Cloudflare Pages — new Quantum Coffee project
+- Use `render.yaml` in the owner repository. The blueprint targets Frankfurt (close to the Atlas Frankfurt region), Starter plan, `server` root, `npm ci`, `npm start`, `/api/ready`, and **manual deployments** (`autoDeployTrigger: off`).
+- Do not import the blueprint or manually create a service before owner billing approval. Do not reuse Tap & Wrap's workspace, environment groups, services, or credentials.
+- Provide in the owner service's Environment settings: `MONGODB_URI` (Quantum Coffee only), `MONGODB_DB_NAME=quantumcoffee_production`, `PUBLIC_SITE_ORIGIN=https://<approved-domain>`, `CLIENT_ORIGIN=https://<approved-domain>`, `NODE_ENV=production`.
+- Keep `REGISTRATION_ENABLED`, `CHECKOUT_ENABLED`, `ORDER_EMAILS_ENABLED`, `ALLOW_ADMIN_BOOTSTRAP` **false**. Never set `ADMIN_BOOTSTRAP_PASSWORD` on Render.
+- Initial readiness is `GET /api/ready` (200 only with database connectivity). `GET /api/health` can still respond when MongoDB is disconnected; don't use it as a readiness gate.
+- Use the production site and API as sibling hosts on the **same registered domain** (for instance `www.example.com` / `api.example.com`). Unrelated `pages.dev` and `onrender.com` hosts are not an adequate production cookie-auth setup.
 
-- Link ONLY `youssefkhaled222/quantum-coffee`.
-- Project root / build directory: `client`.
-- Build command: `npm ci && npm run build`.
-- Build output: `dist` (relative to client root).
-- Production environment variable:
-  `VITE_API_BASE_URL=https://api.your-domain.example` (no trailing slash).
-- Turn off automatic preview deployments if you don't want them; do not create
-  a separate staging Pages project.
-- `client/public/_redirects` serves SPA routes.
-- The website currently emits `<meta name="robots" content="noindex,nofollow">`.
-  Keep that until the whole site, SEO pages, policies and product content are
-  approved. Later remove it deliberately and publish a sitemap.
+## Cloudflare Pages — owner's account
 
-## 5. MongoDB Atlas — NEW Quantum Coffee resources
+- Owner repository `quantumcoffee-eg/quantumcoffee`, branch `main`; project root `client`.
+- Build command: `npm ci && npm run build`. Output: `dist` (relative to `client`).
+- In the Pages production environment, set `VITE_API_BASE_URL=https://api.<approved-domain>` (omit `/api` and trailing slash). Never commit values to `client/.env.example` without reviewing its local edits.
+- `client/public/_redirects` enables SPA routes; `client/public/_headers` adds static-response safety headers and immutable caching for Vite's hashed `/assets/` files. These headers do not cover Render API responses or Pages Functions.
+- Keep the `noindex,nofollow` HTML meta tag until final launch approval. **Do not publish a sitemap, add a canonical production domain, or allow indexing while the domain and product pages are unfinished.**
 
-- A separate Quantum Coffee Atlas project/cluster is preferred; Free tier
-  is fine for initial usage when monitored.
-- Create a new database user with permission for only Quantum Coffee's database.
-- Set a secure connection URI and `MONGODB_DB_NAME=quantumcoffee_production`.
-- Configure Atlas network access for Render connectivity; avoid broad allowlists
-  if reliable narrower controls are possible. If `0.0.0.0/0` is unavoidable
-  on this tier, use a strong least-privilege user and monitor access.
-- Production database is the only environment; **no staging database**.
-- Initial controlled bootstrap should be done locally against the NEW database.
-  Never put ADMIN_BOOTSTRAP_PASSWORD in Render env or send it in chat.
+## R2 — awaiting owner's billing activation
 
-## 6. Cloudflare R2 — NEW Quantum Coffee buckets, later
+- Create dedicated public product-media bucket and distinct **private** payment-proof bucket in the owner's Cloudflare account.
+- Set the API's R2 credentials and bucket values in Render only (or local `.env` when doing a controlled local verification). Never use Tap & Wrap's keys or buckets.
+- Verify bucket CORS, image size/type and signature validation, URL expiry, authorization for proof viewing, orphaned-upload cleanup and usage limits.
+- Product drafts must remain unpublished until approved real photos can be uploaded and verified.
 
-- Prepare one public product media bucket and a distinct private uploads bucket,
-  or equivalent separation. Private payment proofs must never be public.
-- Store credentials only in Render; use object-specific access controls and
-  time-limited reads for authorized admins once upload features are implemented.
-- Env placeholders are in `server/.env.example`; **R2 code is not yet active**.
+## Business settings — dynamic from admin dashboard
 
-## 7. Transactional email + Meta, later
+- Admin Settings controls approved contact details, phone and WhatsApp, shipping bands, payment receiver instructions, and bilingual policies.
+- Currently shipping amount and payment receiver values are pending owner confirmation. Do not invent rates, policies, or payment numbers.
+- COD, InstaPay and Vodafone Cash are the intended payment methods, but saving these values **does not activate checkout**.
+- If delivery fees differ by governorate, extend the current two-band shipping model before opening orders.
 
-- Receive: Cloudflare Email Routing to owner Gmail (domain MX records).
-- Send: verified-domain SMTP service through Nodemailer (SPF, DKIM, DMARC).
-- Mail transport exists but notification workflows and templates are not live.
-- Meta Pixel + Conversions API require IDs, consent handling, server/client
-  event deduplication, and privacy-safe payloads. Do not enable until built.
+## SMTP, SEO, Meta, and launch authorization
 
-## 8. Direct-to-production safeguards
-
-- No separate staging database requested; perform **minimum non-destructive
-  production checks** before taking real orders: health/readiness, role guard,
-  login/logout, admin CRUD with harmless test data removed before launch,
-  zero-cost/controlled checkout scenario, payment proof privacy, and Meta consent.
-- Until commerce is implemented, do not advertise this as a live store or accept
-  money/orders through unfinished UI. Registration remains disabled.
-- No database backup requested: be aware free-tier database loss, accidental
-  deletion or corrupt data may be **irrecoverable**. Even if avoiding scheduled
-  backups, take a manual export before destructive schema/catalog changes and
-  after real customer data begins accumulating. Store it encrypted off-cluster.
-- The Render service uses no persistent disk; uploaded files must go to R2.
-
-## Later: Go-live checklist
-
-Confirmed owner content + policies; product and category admin; secure orders;
-order idempotency; delivery fees; COD/InstaPay/Vodafone Cash; private proof
-verification; emails; legitimate reviews; tracking consent; SEO prerender/
-structured data/sitemap; rate limiting and abuse handling; customer support;
-basic accessibility and mobile/browser testing; launch authorization.
+- A real verified-domain SMTP sender is required for registration, recovery mail and order notifications; do not assume inbound Cloudflare Email Routing is an outbound mail service.
+- Before launch, add route-specific SEO metadata, indexable server-rendered/prerendered public pages, approved canonical URL, EN/AR `hreflang`, accurate sitemap, robots policy, and product/organization structured data. The current Vite SPA with `noindex` is **not** production SEO-ready.
+- Meta Pixel/CAPI and consent/privacy compliance are separate unimplemented launch tasks; do not invent event IDs or activate tracking.
+- A manual production transaction test must cover inventory decrement/restoration, idempotent checkout, guest tracking, customer orders, private R2 proof upload/review, SMTP and refund/cancellation rules. Keep ordering locked until owner explicitly authorizes launch and this review passes.
